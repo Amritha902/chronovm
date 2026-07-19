@@ -180,6 +180,11 @@ fn parse_instruction(
         "jmp" => Instruction::Jmp(target_arg(arg)?),
         "jz" => Instruction::Jz(target_arg(arg)?),
         "jnz" => Instruction::Jnz(target_arg(arg)?),
+        "call" => Instruction::Call {
+            target: target_arg(arg)?,
+            name: arg.unwrap().to_string(),
+        },
+        "ret" => Instruction::Ret,
         "print" => Instruction::Print,
         "halt" => Instruction::Halt,
         other => return Err(err(format!("unknown instruction `{other}`"))),

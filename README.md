@@ -7,10 +7,15 @@ executes, so its terminal debugger lets you drag execution **backwards and
 forwards through time**. Because the whole run is recorded up front, rewinding
 to any step is instant — O(1) — no matter how long the program ran.
 
-Its headline feature is the **causal jump**: point at any variable, press `w`,
-and chronovm answers *"why is this value what it is?"* by walking the data
-backwards to the exact instruction that produced it — through arithmetic, and
-even *through other variables*.
+Two things make it more than a toy:
+
+- **The causal jump.** Point at any variable, press `w`, and chronovm answers
+  *"why is this value what it is?"* by walking the data backwards to the exact
+  instruction that produced it — through arithmetic, through other variables,
+  and even across function calls.
+- **A reverse-unwinding call stack.** Functions get their own local scopes, so a
+  recursive `fact(n)` shows a call stack that grows five deep and collapses as
+  you scrub — each frame carrying its own `n`.
 
 ```
 ┌─ source · 24 instructions ──────────┐┌─ stack · depth 1 ───────────────┐
@@ -61,6 +66,14 @@ cargo run -- run   examples/fib.cvm         # run headless, just print output
 5. Open `examples/buggy.cvm`, press `end`, then `←` once: you're standing on the
    exact step *before* a division-by-zero fault.
 
+### The recursion demo (the call stack)
+
+`cargo run -- debug examples/recursive.cvm` runs a **recursive** factorial.
+Scrub forward and the call-stack panel grows `main() → fact() → fact() → …` five
+deep, each frame showing its own `n`; scrub back and it unwinds. Park at the end,
+select `result`, press `w`, and the causal chain threads back through every
+multiplication *across the recursive frames*.
+
 ## The language
 
 Programs are plain text (`.cvm`), assembled by a tiny two-pass assembler with
@@ -80,7 +93,11 @@ loop:
 ```
 
 **Instructions:** `push pop dup swap` · `add sub mul div mod neg` ·
-`eq lt gt le ge not` · `load store` · `jmp jz jnz` · `print halt`.
+`eq lt gt le ge not` · `load store` · `jmp jz jnz` · `call ret` · `print halt`.
+
+Functions are just labels you `call`. Each call gets its own locals; arguments
+and return values are passed on the shared value stack. See
+[`examples/recursive.cvm`](examples/recursive.cvm).
 
 ## How it works
 
@@ -90,8 +107,9 @@ loop:
 - **`vm.rs`** — the recording VM. Every value on the stack carries the *step
   that produced it*. When a value is stored into a variable and later loaded,
   that provenance flows through the variable — which is what makes causal
-  queries work across variable boundaries. `record()` returns an immutable
-  `Trace` of one `Frame` per step.
+  queries work across variable (and function) boundaries. Each `call` pushes a
+  `Scope` with its own locals, so recursion is faithfully recorded.
+  `record()` returns an immutable `Trace` of one `Frame` per step.
 - **`tui.rs`** — the ratatui UI. The entire display is a pure function of one
   integer, `cursor`, so time-travel is just changing which frame we render.
 

@@ -49,6 +49,14 @@ pub enum Instruction {
     /// Pop x; jump if x != 0.
     Jnz(usize),
 
+    /// Call a function: push a new call frame (with its own locals) and jump to
+    /// `target`. `name` is the label, kept for the debugger's call-stack panel.
+    /// Arguments and return values are passed on the shared value stack.
+    Call { target: usize, name: String },
+    /// Return from the current function: pop the call frame and resume in the
+    /// caller. Any value left on the stack is the return value.
+    Ret,
+
     /// Pop x and append it to the program output.
     Print,
     /// Stop execution.
@@ -80,6 +88,8 @@ impl Instruction {
             Instruction::Jmp(t) => format!("jmp @{t}"),
             Instruction::Jz(t) => format!("jz @{t}"),
             Instruction::Jnz(t) => format!("jnz @{t}"),
+            Instruction::Call { name, .. } => format!("call {name}"),
+            Instruction::Ret => "ret".into(),
             Instruction::Print => "print".into(),
             Instruction::Halt => "halt".into(),
         }

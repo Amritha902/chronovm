@@ -1,0 +1,39 @@
+; Recursive factorial — the showpiece for the call-stack panel.
+;
+; fact(n) calls fact(n-1) until n <= 1. Because every call gets its own locals,
+; each level has its own `n`. Run `chronovm debug examples/recursive.cvm`, then
+; scrub: watch the call stack grow to fact()×5 on the way down and unwind on the
+; way back up, each frame carrying its own n. Then select `acc`, press `w`, and
+; the causal chain threads back through every multiplication across the frames.
+
+    push 5
+    call fact
+    store result     ; keep the answer in main so you can ask "why?" at the end
+    load result
+    print            ; 120
+    halt
+
+; fact: expects n on the stack, leaves n! on the stack.
+fact:
+    store n          ; n is local to THIS call
+    load n
+    push 1
+    le               ; n <= 1 ?
+    jz recurse
+
+    ; base case: 1! == 1
+    push 1
+    ret
+
+recurse:
+    load n
+    push 1
+    sub
+    call fact        ; fact(n - 1)
+    store sub        ; sub = fact(n-1)
+    load n
+    load sub
+    mul              ; n * fact(n-1)
+    store acc        ; name it so `w` has something nice to explain
+    load acc
+    ret

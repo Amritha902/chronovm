@@ -61,7 +61,7 @@ impl App {
     fn step_to(&mut self, target: usize) {
         self.cursor = target.min(self.last());
         // Keep the variable selection in range as the variable set changes.
-        let n = self.trace.frames[self.cursor].vars.len();
+        let n = self.trace.frames[self.cursor].vars().len();
         if n == 0 {
             self.var_sel = 0;
         } else if self.var_sel >= n {
@@ -80,7 +80,7 @@ impl App {
     /// Trigger the causal "why?" query on the currently selected variable.
     fn explain_selected(&mut self) {
         let frame = &self.trace.frames[self.cursor];
-        let Some((name, _)) = frame.vars.iter().nth(self.var_sel) else {
+        let Some((name, _)) = frame.vars().iter().nth(self.var_sel) else {
             return;
         };
         let name = name.clone();
@@ -196,7 +196,7 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             app.playing = !app.playing;
         }
         KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-            let n = app.trace.frames[app.cursor].vars.len();
+            let n = app.trace.frames[app.cursor].vars().len();
             if n > 0 {
                 app.var_sel = if mods.contains(KeyModifiers::SHIFT) {
                     (app.var_sel + n - 1) % n
@@ -206,7 +206,7 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            let n = app.trace.frames[app.cursor].vars.len();
+            let n = app.trace.frames[app.cursor].vars().len();
             if n > 0 {
                 app.var_sel = (app.var_sel + n - 1) % n;
             }
@@ -289,14 +289,16 @@ fn render_source(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_right(f: &mut Frame, app: &App, area: Rect) {
-    // Split the right column: state row on top, output/causal below.
+    // Right column, top to bottom: stack+locals row, call stack, output, and
+    // (when open) the causal panel.
     let has_causal = app.causal.is_some();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(if has_causal { 25 } else { 50 }),
-            Constraint::Percentage(if has_causal { 25 } else { 0 }),
+            Constraint::Percentage(40),                          // stack | locals
+            Constraint::Percentage(22),                          // call stack
+            Constraint::Percentage(if has_causal { 16 } else { 38 }), // output
+            Constraint::Percentage(if has_causal { 22 } else { 0 }),  // causal
         ])
         .split(area);
 
@@ -307,9 +309,10 @@ fn render_right(f: &mut Frame, app: &App, area: Rect) {
 
     render_stack(f, app, state_row[0]);
     render_vars(f, app, state_row[1]);
-    render_output(f, app, rows[1]);
+    render_callstack(f, app, rows[1]);
+    render_output(f, app, rows[2]);
     if has_causal {
-        render_causal(f, app, rows[2]);
+        render_causal(f, app, rows[3]);
     }
 }
 
@@ -356,9 +359,9 @@ fn render_stack(f: &mut Frame, app: &App, area: Rect) {
 fn render_vars(f: &mut Frame, app: &App, area: Rect) {
     let frame = &app.trace.frames[app.cursor];
     let mut items: Vec<ListItem> = Vec::new();
-    for (i, (name, &val)) in frame.vars.iter().enumerate() {
+    for (i, (name, &val)) in frame.vars().iter().enumerate() {
         let selected = i == app.var_sel;
-        let def = frame.var_def.get(name).copied().unwrap_or(0);
+        let def = frame.var_def().get(name).copied().unwrap_or(0);
         let marker = if selected { "◆" } else { " " };
         let line = Line::from(vec![
             Span::styled(
@@ -395,8 +398,60 @@ fn render_vars(f: &mut Frame, app: &App, area: Rect) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" variables · [w] why? ")
+            .title(format!(" locals of {}() · [w] why? ", frame.current().func))
             .border_style(Style::default().fg(Color::Yellow)),
+    );
+    f.render_widget(list, area);
+}
+
+/// The call-stack panel: one row per active call frame, top (current) first.
+/// It visibly grows and unwinds as you scrub — the payoff for recursion demos.
+fn render_callstack(f: &mut Frame, app: &App, area: Rect) {
+    let frame = &app.trace.frames[app.cursor];
+    let depth = frame.call_stack.len();
+    let mut items: Vec<ListItem> = Vec::new();
+    // Iterate top-of-stack first so the currently running function is on top.
+    for (rev_i, scope) in frame.call_stack.iter().rev().enumerate() {
+        let is_current = rev_i == 0;
+        let level = depth - 1 - rev_i; // 0 == main
+        // Compact one-line summary of this frame's locals, e.g. "n=3 acc=6".
+        let locals: String = scope
+            .locals
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let marker = if is_current { "▶" } else { " " };
+        let indent = "  ".repeat(rev_i.min(6));
+        let line = Line::from(vec![
+            Span::styled(format!(" {marker} "), Style::default().fg(Color::Magenta)),
+            Span::raw(indent),
+            Span::styled(
+                format!("{}()", scope.func),
+                Style::default()
+                    .fg(if is_current { Color::Magenta } else { Color::Gray })
+                    .add_modifier(if is_current {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ),
+            Span::styled(
+                if locals.is_empty() {
+                    format!("   #{level}")
+                } else {
+                    format!("   {locals}")
+                },
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]);
+        items.push(ListItem::new(line));
+    }
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" call stack · depth {depth} "))
+            .border_style(Style::default().fg(Color::Magenta)),
     );
     f.render_widget(list, area);
 }
@@ -447,7 +502,7 @@ fn render_causal(f: &mut Frame, app: &App, area: Rect) {
     }
     let title = format!(" why is `{}` == {}? · [↑↓] walk causes · [esc] close ", view.var, {
         app.trace.frames[app.cursor]
-            .vars
+            .vars()
             .get(&view.var)
             .copied()
             .unwrap_or_default()
@@ -513,4 +568,68 @@ fn render_help(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::DarkGray),
     ))));
     f.render_widget(para, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{assembler::assemble, vm::record};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn recursive_app() -> App {
+        // main keeps the answer in `result`, so a causal query works even after
+        // the recursion has fully unwound back to main.
+        let src = "\
+            push 4\ncall fact\nstore result\nload result\nprint\nhalt\n\
+        fact:\nstore n\nload n\npush 1\nle\njz recurse\npush 1\nret\n\
+        recurse:\nload n\npush 1\nsub\ncall fact\nload n\nmul\nstore acc\nload acc\nret\n";
+        App::new(record(assemble(src).unwrap()))
+    }
+
+    /// Rendering must not panic at any scrub position — including step 0, the
+    /// end, and every frame in between (this catches layout / indexing bugs
+    /// like the call stack growing or the stack being empty).
+    #[test]
+    fn renders_every_frame_without_panicking() {
+        let mut app = recursive_app();
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        for cursor in 0..=app.last() {
+            app.cursor = cursor;
+            term.draw(|f| ui(f, &app)).expect("draw must not panic");
+        }
+    }
+
+    /// The call-stack panel should actually show recursion at its deepest point.
+    #[test]
+    fn call_stack_panel_shows_recursion() {
+        let mut app = recursive_app();
+        // Park on the deepest frame.
+        let deepest = (0..=app.last())
+            .max_by_key(|&i| app.trace.frames[i].call_stack.len())
+            .unwrap();
+        app.cursor = deepest;
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        term.draw(|f| ui(f, &app)).unwrap();
+        let rendered = buffer_text(term.backend().buffer());
+        assert!(rendered.contains("call stack"), "call-stack panel missing");
+        assert!(rendered.contains("fact()"), "recursion frames missing");
+    }
+
+    /// Opening the causal panel and walking it must render cleanly too.
+    #[test]
+    fn causal_panel_renders() {
+        let mut app = recursive_app();
+        app.cursor = app.last();
+        app.explain_selected();
+        assert!(app.causal.is_some(), "expected a causal chain for a local");
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        term.draw(|f| ui(f, &app)).unwrap();
+        let rendered = buffer_text(term.backend().buffer());
+        assert!(rendered.contains("why is"), "causal panel title missing");
+    }
+
+    /// Flatten a ratatui test buffer into a single searchable string.
+    fn buffer_text(buf: &ratatui::buffer::Buffer) -> String {
+        buf.content().iter().map(|c| c.symbol()).collect()
+    }
 }

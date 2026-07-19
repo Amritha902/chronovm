@@ -20,6 +20,22 @@ use crate::isa::{Instruction, Program};
 /// run away. Keeps a buggy `jmp` loop from eating all memory during recording.
 pub const STEP_LIMIT: usize = 2_000_000;
 
+/// One activation record on the call stack. Each function call gets its own
+/// `Scope`, so a variable named `n` in a recursive call is independent of the
+/// caller's `n`. This is what makes the debugger's unwinding call-stack panel
+/// meaningful.
+#[derive(Clone, Debug)]
+pub struct Scope {
+    /// The function's name (its label), or "main" for the top level.
+    pub func: String,
+    /// The instruction index to resume at in the caller once this frame returns.
+    pub return_ip: usize,
+    /// This frame's local variables.
+    pub locals: BTreeMap<String, i64>,
+    /// For each local, the step whose `store` last wrote it.
+    pub locals_def: BTreeMap<String, usize>,
+}
+
 /// A snapshot of the entire machine at one point in time, plus the metadata
 /// needed to explain *how* it got there.
 #[derive(Clone, Debug)]
@@ -33,15 +49,15 @@ pub struct Frame {
     /// line that just ran.
     pub last_ip: Option<usize>,
 
-    /// The value stack, bottom-to-top.
+    /// The value stack, bottom-to-top. Shared across all call frames — this is
+    /// how arguments and return values are passed.
     pub stack: Vec<i64>,
     /// Provenance, index-aligned with `stack`: the step that produced each value.
     pub stack_origin: Vec<usize>,
 
-    /// Named variables and their current values.
-    pub vars: BTreeMap<String, i64>,
-    /// For each variable, the step whose `store` last wrote it.
-    pub var_def: BTreeMap<String, usize>,
+    /// The call stack, bottom (main) to top (currently executing function).
+    /// Always contains at least the `main` scope.
+    pub call_stack: Vec<Scope>,
 
     /// Cumulative program output up to and including this step.
     pub output: String,
@@ -56,6 +72,23 @@ pub struct Frame {
     pub error: Option<String>,
     /// True once the machine has halted (cleanly or via fault).
     pub halted: bool,
+}
+
+impl Frame {
+    /// The currently executing scope (top of the call stack).
+    pub fn current(&self) -> &Scope {
+        self.call_stack.last().expect("call stack is never empty")
+    }
+
+    /// The locals visible at this point in time (the current scope's).
+    pub fn vars(&self) -> &BTreeMap<String, i64> {
+        &self.current().locals
+    }
+
+    /// The defining step for each visible local.
+    pub fn var_def(&self) -> &BTreeMap<String, usize> {
+        &self.current().locals_def
+    }
 }
 
 /// A complete recorded execution: the program plus every frame it produced.
@@ -94,7 +127,7 @@ impl Trace {
     /// behind the debugger's "why is this value what it is?" jump.
     pub fn explain_var(&self, frame_idx: usize, var: &str) -> Vec<CausalNode> {
         let frame = &self.frames[frame_idx];
-        let Some(&def_step) = frame.var_def.get(var) else {
+        let Some(&def_step) = frame.var_def().get(var) else {
             return vec![CausalNode {
                 step: frame_idx,
                 description: format!("`{var}` was never written before this point"),
@@ -180,8 +213,8 @@ struct Machine<'p> {
     step: usize,
     stack: Vec<i64>,
     origin: Vec<usize>,
-    vars: BTreeMap<String, i64>,
-    var_def: BTreeMap<String, usize>,
+    /// The call stack; always non-empty (the base scope is `main`).
+    call_stack: Vec<Scope>,
     output: String,
     halted: bool,
     // Bookkeeping so a step-limit frame can report the last op/ip it saw.
@@ -197,13 +230,22 @@ impl<'p> Machine<'p> {
             step: 0,
             stack: Vec::new(),
             origin: Vec::new(),
-            vars: BTreeMap::new(),
-            var_def: BTreeMap::new(),
+            call_stack: vec![Scope {
+                func: "main".into(),
+                return_ip: usize::MAX,
+                locals: BTreeMap::new(),
+                locals_def: BTreeMap::new(),
+            }],
             output: String::new(),
             halted: false,
             last_op: None,
             prev_ip: 0,
         }
+    }
+
+    /// Mutable access to the currently executing scope's locals.
+    fn scope(&mut self) -> &mut Scope {
+        self.call_stack.last_mut().expect("call stack never empty")
     }
 
     /// Capture the current state as an immutable frame.
@@ -221,8 +263,7 @@ impl<'p> Machine<'p> {
             last_ip,
             stack: self.stack.clone(),
             stack_origin: self.origin.clone(),
-            vars: self.vars.clone(),
-            var_def: self.var_def.clone(),
+            call_stack: self.call_stack.clone(),
             output: self.output.clone(),
             reads,
             wrote_var,
@@ -333,23 +374,27 @@ impl<'p> Machine<'p> {
                 None => Some(underflow("not")),
             },
 
-            Instruction::Load(name) => match self.vars.get(name).copied() {
-                Some(v) => {
-                    // Provenance flows through the variable: the loaded value's
-                    // origin is the step that last stored it.
-                    let def = self.var_def.get(name).copied().unwrap_or(0);
-                    reads.push(def);
-                    self.push(v, def);
-                    self.ip += 1;
-                    None
+            Instruction::Load(name) => {
+                // Locals are per call frame, so this reads the current scope.
+                match self.scope().locals.get(name).copied() {
+                    Some(v) => {
+                        // Provenance flows through the variable: the loaded
+                        // value's origin is the step that last stored it.
+                        let def = self.scope().locals_def.get(name).copied().unwrap_or(0);
+                        reads.push(def);
+                        self.push(v, def);
+                        self.ip += 1;
+                        None
+                    }
+                    None => Some(format!("load of undefined variable `{name}`")),
                 }
-                None => Some(format!("load of undefined variable `{name}`")),
-            },
+            }
             Instruction::Store(name) => match self.pop() {
                 Some((v, o)) => {
                     reads.push(o);
-                    self.vars.insert(name.clone(), v);
-                    self.var_def.insert(name.clone(), this_step);
+                    let scope = self.scope();
+                    scope.locals.insert(name.clone(), v);
+                    scope.locals_def.insert(name.clone(), this_step);
                     wrote_var = Some(name.clone());
                     self.ip += 1;
                     None
@@ -377,6 +422,31 @@ impl<'p> Machine<'p> {
                 }
                 None => Some(underflow("jnz")),
             },
+
+            Instruction::Call { target, name } => {
+                // Push a fresh activation record; arguments stay on the shared
+                // value stack for the callee to consume.
+                self.call_stack.push(Scope {
+                    func: name.clone(),
+                    return_ip: self.ip + 1,
+                    locals: BTreeMap::new(),
+                    locals_def: BTreeMap::new(),
+                });
+                self.ip = *target;
+                None
+            }
+            Instruction::Ret => {
+                if self.call_stack.len() > 1 {
+                    // Return value (if any) is left on the shared stack.
+                    let scope = self.call_stack.pop().unwrap();
+                    self.ip = scope.return_ip;
+                    None
+                } else {
+                    // `ret` from main ends the program cleanly.
+                    self.halted = true;
+                    None
+                }
+            }
 
             Instruction::Print => match self.pop() {
                 Some((v, o)) => {
@@ -458,7 +528,7 @@ mod tests {
     fn computes_and_records_every_step() {
         let t = trace_of("push 6\nstore x\npush 7\nstore y\nload x\nload y\nmul\nstore z\nhalt\n");
         let last = &t.frames[t.last()];
-        assert_eq!(last.vars.get("z"), Some(&42));
+        assert_eq!(last.vars().get("z"), Some(&42));
         assert!(last.error.is_none());
         // Frame 0 is the initial state, then one frame per executed instruction.
         assert!(t.frames.len() > 1);
@@ -495,5 +565,39 @@ mod tests {
         // `jmp self` with no exit must stop at the step limit, not hang.
         let t = trace_of("loop:\njmp loop\n");
         assert!(t.faulted().unwrap().contains("step limit"));
+    }
+
+    #[test]
+    fn recursion_has_independent_frame_locals() {
+        // Recursive factorial: each call frame must keep its own `n`, otherwise
+        // the recursion would clobber the caller's value and give a wrong answer.
+        let src = "\
+            push 4\n\
+            call fact\n\
+            print\n\
+            halt\n\
+        fact:\n\
+            store n\n\
+            load n\n\
+            push 1\n\
+            le\n\
+            jz recurse\n\
+            push 1\n\
+            ret\n\
+        recurse:\n\
+            load n\n\
+            push 1\n\
+            sub\n\
+            call fact\n\
+            load n\n\
+            mul\n\
+            ret\n";
+        let t = trace_of(src);
+        assert_eq!(t.faulted(), None);
+        // 4! == 24
+        assert_eq!(t.frames[t.last()].output.trim(), "24");
+        // The call stack must have grown past depth 1 at some point.
+        let max_depth = t.frames.iter().map(|f| f.call_stack.len()).max().unwrap();
+        assert!(max_depth >= 4, "expected deep recursion, got {max_depth}");
     }
 }
