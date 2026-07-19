@@ -7,12 +7,7 @@
 //!
 //! With a single file argument and no subcommand, `debug` is assumed.
 
-mod assembler;
-mod isa;
-mod query;
-mod tui;
-mod vm;
-
+use chronovm::{assembler, tui, vm};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
