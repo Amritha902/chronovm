@@ -41,7 +41,7 @@ add depth, harden quality.
 ## Backlog (priority order — do the top unchecked item)
 
 ### Theme A — Sophisticated UI & touch-and-feel (web) ★ top priority
-- [ ] Refine the visual system: type scale, spacing rhythm, panel elevation,
+- [x] Refine the visual system: type scale, spacing rhythm, panel elevation,
       refined palette, a proper hero/header, tasteful accent usage.
 - [ ] Motion: animate value changes (pulse), stack push/pop (slide/fade),
       call-stack frames entering/leaving, and eased timeline scrubbing.
@@ -103,3 +103,6 @@ add depth, harden quality.
 ## Done log
 - 2026-07-19 — Fixed integer-overflow crash (checked arithmetic → VM fault) + test.
 - 2026-07-19 — Added MIT LICENSE file.
+- 2026-07-19 — Web: refined visual system — layered palette, elevated panels with
+  per-panel accent dots, gradient wordmark + live badge header, custom slider
+  (gradient fill + glowing thumb), custom scrollbars, accent-bar active line.
