@@ -43,9 +43,9 @@ add depth, harden quality.
 ### Theme A — Sophisticated UI & touch-and-feel (web) ★ top priority
 - [x] Refine the visual system: type scale, spacing rhythm, panel elevation,
       refined palette, a proper hero/header, tasteful accent usage.
-- [ ] Motion: animate value changes (pulse), stack push/pop (slide/fade),
-      call-stack frames entering/leaving, and eased timeline scrubbing.
-- [ ] Timeline track markers: red ticks at fault steps, yellow ticks at current
+- [x] Motion: phosphor-persistence flash on freshly-rendered values/active
+      line each step, plus a slow CRT refresh sweep. (reduced-motion honored)
+- [x] Timeline track markers: red ticks at fault steps, yellow ticks at current
       search matches, subtle hover tooltip showing that step's summary.
 - [ ] Provenance visualization: when a stack value or variable is selected,
       visually connect it to the step(s) that produced it (highlight + arrows).
@@ -55,11 +55,13 @@ add depth, harden quality.
       empty states.
 - [ ] Keyboard shortcut overlay (press `?`), and a first-run coach tour.
 - [ ] Light/dark theme toggle with a polished switch; respect system theme.
-- [ ] Mobile/responsive polish so it looks intentional on a phone.
+- [x] Mobile/responsive polish so it looks intentional on a phone.
 - [ ] "Share" button: encode the current program into the URL (base64) so a link
       reproduces it; load from URL on start.
 - [ ] Editor upgrades: line numbers + lightweight `.cvm` syntax highlighting +
       inline assembler-error underlines.
+- [ ] Make timeline ticks clickable (jump straight to a fault/match on click),
+      and restore the green "OK" styling in the typewriter boot sequence.
 
 ### Theme B — Loopholes / robustness
 - [x] Integer overflow (add/sub/mul/div/neg) → clean fault, not a panic.
@@ -106,3 +108,11 @@ add depth, harden quality.
 - 2026-07-19 — Web: refined visual system — layered palette, elevated panels with
   per-panel accent dots, gradient wordmark + live badge header, custom slider
   (gradient fill + glowing thumb), custom scrollbars, accent-bar active line.
+- 2026-07-20 — Web: motion + CRT feel — phosphor-persistence flash on freshly
+  rendered values/active line, typewriter boot sequence, slow CRT refresh sweep,
+  tube-edge vignette; all reduced-motion-honored.
+- 2026-07-20 — Web: mobile/responsive polish (≤600px header wrap, tighter
+  padding, fluid search input).
+- 2026-07-20 — Web: timeline track markers — red ticks at the fault step, yellow
+  ticks at search matches, and a hover tooltip previewing any step's instruction
+  + status (edge-clamped so it never spills off-screen). Verified in-browser.
