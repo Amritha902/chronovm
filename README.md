@@ -2,6 +2,11 @@
 
 **A stack-based bytecode VM you can scrub like a video.**
 
+### ▶ [Try it live in your browser →](https://amritha902.github.io/chronovm/)
+
+No install — the whole VM runs as WebAssembly. Drag the timeline, click a
+variable to ask *why* it holds its value, or search the run for `depth >= 5`.
+
 chronovm is a small virtual machine with a twist: it records *every* step it
 executes, so its terminal debugger lets you drag execution **backwards and
 forwards through time**. Because the whole run is recorded up front, rewinding
@@ -135,11 +140,27 @@ and return values are passed on the shared value stack. See
 - **`tui.rs`** — the ratatui UI. The entire display is a pure function of one
   integer, `cursor`, so time-travel is just changing which frame we render.
 
+## The browser build
+
+The VM core is UI-agnostic and compiles to WebAssembly, so the browser
+debugger ([`docs/`](docs/index.html)) runs the *exact same* VM, causal engine,
+and query language as the terminal — no logic is duplicated. `src/wasm.rs`
+exposes a `Session` via wasm-bindgen; the page is plain HTML/JS.
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli     # once
+./build-web.sh                     # compiles wasm + generates docs/pkg/
+(cd docs && python3 -m http.server 8080)   # ES modules + wasm need http://
+```
+
+The live demo above is this same `docs/` folder served by GitHub Pages.
+
 ## Build & test
 
 ```sh
-cargo build --release
-cargo test
+cargo build --release   # the terminal debugger
+cargo test              # 17 tests: VM, assembler, causal, recursion, rendering
 ```
 
 ## License
