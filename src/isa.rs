@@ -117,4 +117,8 @@ impl Program {
     pub fn len(&self) -> usize {
         self.code.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.code.is_empty()
+    }
 }

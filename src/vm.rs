@@ -332,29 +332,48 @@ impl<'p> Machine<'p> {
                 }
             }
 
-            Instruction::Add => self.binary(&mut reads, this_step, |a, b| Ok(a + b)),
-            Instruction::Sub => self.binary(&mut reads, this_step, |a, b| Ok(a - b)),
-            Instruction::Mul => self.binary(&mut reads, this_step, |a, b| Ok(a * b)),
+            // Arithmetic uses checked operations so overflow becomes a clean VM
+            // fault instead of a panic that would tear down the raw-mode TUI.
+            Instruction::Add => self.binary(&mut reads, this_step, |a, b| {
+                a.checked_add(b)
+                    .ok_or_else(|| "integer overflow in add".to_string())
+            }),
+            Instruction::Sub => self.binary(&mut reads, this_step, |a, b| {
+                a.checked_sub(b)
+                    .ok_or_else(|| "integer overflow in sub".to_string())
+            }),
+            Instruction::Mul => self.binary(&mut reads, this_step, |a, b| {
+                a.checked_mul(b)
+                    .ok_or_else(|| "integer overflow in mul".to_string())
+            }),
             Instruction::Div => self.binary(&mut reads, this_step, |a, b| {
                 if b == 0 {
                     Err("division by zero".into())
                 } else {
-                    Ok(a / b)
+                    // Catches i64::MIN / -1, which also overflows.
+                    a.checked_div(b)
+                        .ok_or_else(|| "integer overflow in div".to_string())
                 }
             }),
             Instruction::Mod => self.binary(&mut reads, this_step, |a, b| {
                 if b == 0 {
                     Err("modulo by zero".into())
                 } else {
-                    Ok(a % b)
+                    a.checked_rem(b)
+                        .ok_or_else(|| "integer overflow in mod".to_string())
                 }
             }),
             Instruction::Neg => match self.pop() {
                 Some((a, o)) => {
                     reads.push(o);
-                    self.push(-a, this_step);
-                    self.ip += 1;
-                    None
+                    match a.checked_neg() {
+                        Some(v) => {
+                            self.push(v, this_step);
+                            self.ip += 1;
+                            None
+                        }
+                        None => Some("integer overflow in neg".into()),
+                    }
                 }
                 None => Some(underflow("neg")),
             },
@@ -565,6 +584,15 @@ mod tests {
         // `jmp self` with no exit must stop at the step limit, not hang.
         let t = trace_of("loop:\njmp loop\n");
         assert!(t.faulted().unwrap().contains("step limit"));
+    }
+
+    #[test]
+    fn integer_overflow_faults_instead_of_panicking() {
+        // i64::MAX + 1 must be reported as a fault, not crash the interpreter.
+        let t = trace_of("push 9223372036854775807\npush 1\nadd\nhalt\n");
+        assert_eq!(t.faulted(), Some("integer overflow in add"));
+        // History up to the fault is intact.
+        assert!(t.frames.len() >= 3);
     }
 
     #[test]
