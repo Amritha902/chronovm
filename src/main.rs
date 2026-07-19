@@ -9,6 +9,7 @@
 
 mod assembler;
 mod isa;
+mod query;
 mod tui;
 mod vm;
 

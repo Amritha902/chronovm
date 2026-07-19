@@ -36,9 +36,7 @@ impl std::error::Error for AsmError {}
 
 /// Strip a comment (`;` or `#`) and surrounding whitespace from a line.
 fn strip(line: &str) -> &str {
-    let end = line
-        .find(|c| c == ';' || c == '#')
-        .unwrap_or(line.len());
+    let end = line.find([';', '#']).unwrap_or(line.len());
     line[..end].trim()
 }
 

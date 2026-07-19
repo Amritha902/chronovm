@@ -16,6 +16,9 @@ Two things make it more than a toy:
 - **A reverse-unwinding call stack.** Functions get their own local scopes, so a
   recursive `fact(n)` shows a call stack that grows five deep and collapses as
   you scrub — each frame carrying its own `n`.
+- **Search across time.** Press `/` and type a condition like `acc > 100`,
+  `n == 0`, `depth >= 4`, or `fault`, and chronovm teleports to the exact step it
+  first became true. `n` / `N` walk every match.
 
 ```
 ┌─ source · 24 instructions ──────────┐┌─ stack · depth 1 ───────────────┐
@@ -51,7 +54,24 @@ cargo run -- run   examples/fib.cvm         # run headless, just print output
 | `tab`          | Pick a variable                                    |
 | `w`            | **Why?** — jump to the cause of the selected value |
 | `↑` / `↓`      | Walk the causal chain (while the panel is open)    |
+| `/`            | **Search time** — jump to a step matching a condition |
+| `n` / `N`      | Next / previous search match                       |
 | `q`            | Quit                                               |
+
+### Searching across time
+
+Press `/` and type a condition:
+
+| Query          | Jumps to…                                          |
+| -------------- | -------------------------------------------------- |
+| `acc >= 100`   | the first step a variable crosses a threshold      |
+| `n == 0`       | the moment a variable hits a value                 |
+| `depth >= 4`   | the first time recursion gets that deep            |
+| `top < 0`      | when the top of the stack goes negative            |
+| `fault`        | the step where execution faulted                   |
+
+Operators: `== != < > <= >=`. Variable lookups scan the call stack inward, so a
+local inside a function is findable while you're in that call.
 
 ## The demo (90 seconds)
 
@@ -104,6 +124,8 @@ and return values are passed on the shared value stack. See
 - **`isa.rs`** — the instruction set and the assembled `Program`.
 - **`assembler.rs`** — two-pass assembler; pass one maps labels to indices,
   pass two resolves jump targets.
+- **`query.rs`** — the timeline search language (`parse` + `Predicate::holds`),
+  evaluated against any recorded frame.
 - **`vm.rs`** — the recording VM. Every value on the stack carries the *step
   that produced it*. When a value is stored into a variable and later loaded,
   that provenance flows through the variable — which is what makes causal

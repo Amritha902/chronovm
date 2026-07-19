@@ -19,6 +19,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+use crate::query;
 use crate::vm::{CausalNode, Trace};
 
 /// How far the `[` / `]` keys leap along the timeline.
@@ -32,6 +33,15 @@ struct CausalView {
     sel: usize,
 }
 
+/// The result of a timeline search: the steps that matched a condition, plus
+/// where we currently are within them.
+struct SearchState {
+    query: String,
+    matches: Vec<usize>,
+    idx: usize,
+    error: Option<String>,
+}
+
 struct App {
     trace: Trace,
     cursor: usize,
@@ -39,6 +49,10 @@ struct App {
     /// Index into the current frame's variable list, for causal queries.
     var_sel: usize,
     causal: Option<CausalView>,
+    /// The search query currently being typed (`/` mode), if any.
+    input: Option<String>,
+    /// The last executed search.
+    search: Option<SearchState>,
     should_quit: bool,
 }
 
@@ -50,8 +64,64 @@ impl App {
             playing: false,
             var_sel: 0,
             causal: None,
+            input: None,
+            search: None,
             should_quit: false,
         }
+    }
+
+    /// Run the typed query and jump to the first match at or after the cursor.
+    fn commit_search(&mut self, query: String) {
+        match query::parse(&query) {
+            Ok(pred) => {
+                let matches: Vec<usize> = (0..=self.last())
+                    .filter(|&i| pred.holds(&self.trace.frames[i]))
+                    .collect();
+                if matches.is_empty() {
+                    self.search = Some(SearchState {
+                        query,
+                        matches,
+                        idx: 0,
+                        error: None,
+                    });
+                    return;
+                }
+                // First match at or after the cursor, wrapping to the start.
+                let idx = matches
+                    .iter()
+                    .position(|&m| m >= self.cursor)
+                    .unwrap_or(0);
+                let step = matches[idx];
+                self.search = Some(SearchState {
+                    query,
+                    matches,
+                    idx,
+                    error: None,
+                });
+                self.step_to(step);
+            }
+            Err(e) => {
+                self.search = Some(SearchState {
+                    query,
+                    matches: Vec::new(),
+                    idx: 0,
+                    error: Some(e),
+                });
+            }
+        }
+    }
+
+    /// Move to the next (`delta > 0`) or previous match, wrapping around.
+    fn cycle_match(&mut self, delta: isize) {
+        let Some(search) = &mut self.search else { return };
+        let len = search.matches.len();
+        if len == 0 {
+            return;
+        }
+        let idx = (search.idx as isize + delta).rem_euclid(len as isize) as usize;
+        search.idx = idx;
+        let step = search.matches[idx];
+        self.step_to(step);
     }
 
     fn last(&self) -> usize {
@@ -143,6 +213,26 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Res
 }
 
 fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    // While typing a search query, keys build the query string.
+    if let Some(buf) = &mut app.input {
+        match code {
+            KeyCode::Enter => {
+                let query = std::mem::take(buf);
+                app.input = None;
+                if !query.trim().is_empty() {
+                    app.commit_search(query);
+                }
+            }
+            KeyCode::Esc => app.input = None,
+            KeyCode::Backspace => {
+                buf.pop();
+            }
+            KeyCode::Char(c) => buf.push(c),
+            _ => {}
+        }
+        return;
+    }
+
     // When the causal panel is open it captures navigation keys.
     if app.causal.is_some() {
         match code {
@@ -163,7 +253,21 @@ fn handle_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
 
     match code {
-        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Esc => {
+            // Esc clears an active search first; otherwise it quits.
+            if app.search.is_some() {
+                app.search = None;
+            } else {
+                app.should_quit = true;
+            }
+        }
+        KeyCode::Char('/') => {
+            app.playing = false;
+            app.input = Some(String::new());
+        }
+        KeyCode::Char('n') => app.cycle_match(1),
+        KeyCode::Char('N') => app.cycle_match(-1),
         KeyCode::Left | KeyCode::Char('h') => {
             app.playing = false;
             app.back(1);
@@ -558,16 +662,70 @@ fn render_timeline(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_help(f: &mut Frame, app: &App, area: Rect) {
-    let text = if app.causal.is_some() {
-        "  causal view — [↑↓/jk] walk the chain · [←→] step out · [esc] close"
+    // Priority: search input > search results > causal help > default help.
+    let line = if let Some(buf) = &app.input {
+        Line::from(vec![
+            Span::styled("  search: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("{buf}▏"),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "   (e.g. acc > 100 · n == 0 · depth >= 4 · fault)",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ])
+    } else if let Some(search) = &app.search {
+        search_status_line(search)
+    } else if app.causal.is_some() {
+        Line::from(Span::styled(
+            "  causal view — [↑↓/jk] walk the chain · [←→] step out · [esc] close",
+            Style::default().fg(Color::DarkGray),
+        ))
     } else {
-        "  [←→] step  [ [ ] ] leap  [space] play  [tab] pick var  [w] why?  [home/end] jump  [q] quit"
+        Line::from(Span::styled(
+            "  [←→] step  [ [ ] ] leap  [space] play  [tab] var  [w] why?  [/] search  [q] quit",
+            Style::default().fg(Color::DarkGray),
+        ))
     };
-    let para = Paragraph::new(Text::from(Line::from(Span::styled(
-        text,
-        Style::default().fg(Color::DarkGray),
-    ))));
-    f.render_widget(para, area);
+    f.render_widget(Paragraph::new(Text::from(line)), area);
+}
+
+fn search_status_line(search: &SearchState) -> Line<'static> {
+    let head = Span::styled(
+        format!("  /{}  ", search.query),
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+    );
+    if let Some(err) = &search.error {
+        return Line::from(vec![
+            head,
+            Span::styled(format!("✗ {err}"), Style::default().fg(Color::Red)),
+        ]);
+    }
+    if search.matches.is_empty() {
+        return Line::from(vec![
+            head,
+            Span::styled("no matches", Style::default().fg(Color::Red)),
+        ]);
+    }
+    Line::from(vec![
+        head,
+        Span::styled(
+            format!(
+                "match {}/{} (step {})",
+                search.idx + 1,
+                search.matches.len(),
+                search.matches[search.idx]
+            ),
+            Style::default().fg(Color::Green),
+        ),
+        Span::styled(
+            "   [n]ext · [N]prev · [esc] clear",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])
 }
 
 #[cfg(test)]
@@ -631,5 +789,35 @@ mod tests {
     /// Flatten a ratatui test buffer into a single searchable string.
     fn buffer_text(buf: &ratatui::buffer::Buffer) -> String {
         buf.content().iter().map(|c| c.symbol()).collect()
+    }
+
+    /// A timeline search should jump the cursor to a matching step and the
+    /// status line should report the match count.
+    #[test]
+    fn search_jumps_to_a_matching_step_and_renders() {
+        let mut app = recursive_app();
+        app.cursor = 0;
+        app.commit_search("depth >= 5".to_string());
+        let search = app.search.as_ref().expect("search recorded");
+        assert!(!search.matches.is_empty(), "depth>=5 should match in fact(5)");
+        // The cursor landed on a frame that actually satisfies the query.
+        assert!(app.trace.frames[app.cursor].call_stack.len() >= 5);
+
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        term.draw(|f| ui(f, &app)).unwrap();
+        let rendered = buffer_text(term.backend().buffer());
+        assert!(rendered.contains("match 1/"), "search status missing");
+    }
+
+    #[test]
+    fn a_bad_query_reports_an_error_without_moving() {
+        let mut app = recursive_app();
+        app.cursor = 3;
+        app.commit_search("acc >>> nope".to_string());
+        assert_eq!(app.cursor, 3, "a bad query must not move the cursor");
+        assert!(app.search.as_ref().unwrap().error.is_some());
+        // And it renders the error rather than panicking.
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        term.draw(|f| ui(f, &app)).unwrap();
     }
 }
