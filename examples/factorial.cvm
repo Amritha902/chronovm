@@ -1,0 +1,33 @@
+; factorial(n) — the flagship demo for the causal "why?" jump.
+;
+; Computes n! iteratively. Park at the end, select `acc`, press `w`, and the
+; debugger walks the multiplication chain that built the final value.
+
+    push 5
+    store n         ; n = 5
+    push 1
+    store acc        ; acc = 1
+    push 1
+    store i          ; i = 1
+
+loop:
+    load i
+    load n
+    le               ; i <= n ?
+    jz done
+
+    load acc
+    load i
+    mul
+    store acc        ; acc = acc * i
+
+    load i
+    push 1
+    add
+    store i          ; i = i + 1
+    jmp loop
+
+done:
+    load acc
+    print            ; prints 120
+    halt

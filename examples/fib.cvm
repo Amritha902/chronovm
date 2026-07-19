@@ -1,0 +1,37 @@
+; Fibonacci — prints the sequence up to the 10th term.
+;
+; Two rolling variables a and b. Good for watching the stack churn as you
+; scrub, and for "why is b == 55?" causal queries near the end.
+
+    push 0
+    store a
+    push 1
+    store b
+    push 10
+    store count
+
+loop:
+    load count
+    jz done          ; count reached 0 ?
+
+    load a
+    print            ; emit current term
+
+    ; next = a + b ; a = b ; b = next
+    load a
+    load b
+    add
+    store next
+    load b
+    store a
+    load next
+    store b
+
+    load count
+    push 1
+    sub
+    store count
+    jmp loop
+
+done:
+    halt

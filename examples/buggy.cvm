@@ -1,0 +1,20 @@
+; A deliberately buggy program — demonstrates scrubbing to a fault.
+;
+; It divides 100 by a divisor that counts down to zero, so it eventually hits
+; a division-by-zero fault. Run `chronovm debug`, jump to the end, and rewind
+; one step to catch the exact moment before the machine faulted.
+
+    push 3
+    store d
+
+loop:
+    push 100
+    load d
+    div              ; 100 / d  — faults when d == 0
+    print
+
+    load d
+    push 1
+    sub
+    store d          ; d = d - 1
+    jmp loop         ; no exit condition on purpose — walks straight into d == 0
