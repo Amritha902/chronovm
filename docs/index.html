@@ -143,6 +143,24 @@
   .cnode:hover { background: rgba(255,198,77,.10); }
   .cnode .step { color: var(--amber); width: 66px; }
 
+  /* ---- provenance: arrows connecting a value to the instruction(s) that made it ---- */
+  #prov { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none;
+    z-index: 15; overflow: visible; }
+  #prov path.link { fill: none; stroke: var(--amber); stroke-width: 1.4;
+    stroke-dasharray: 5 4; opacity: .92; filter: drop-shadow(0 0 3px rgba(255,198,77,.7));
+    animation: provflow 11s linear infinite; }
+  #prov marker path { fill: var(--amber); }
+  #prov circle.pin { fill: var(--amber); filter: drop-shadow(0 0 4px var(--amber)); }
+  @keyframes provflow { to { stroke-dashoffset: -180; } }
+  /* source instruction that produced the selected value */
+  .line.provsrc { background: rgba(255,198,77,.13); box-shadow: inset 2px 0 0 var(--amber);
+    text-shadow: 0 0 6px rgba(255,198,77,.5); }
+  .line.provsrc .addr { color: var(--amber); }
+  .line.provsrc .ord { color: var(--bg); background: var(--amber); padding: 0 5px; margin-left: 6px;
+    font-size: 10px; border-radius: 0; text-shadow: none; }
+  .row.provtarget, .cnode.provtarget { box-shadow: inset 0 0 0 1px var(--amber); background: rgba(255,198,77,.16); }
+  @media (prefers-reduced-motion: reduce) { #prov path.link { animation: none; } }
+
   /* timeline */
   .timeline { padding: 16px 20px 8px; }
   .tl-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -251,6 +269,8 @@
 <div id="boot"><pre id="bootText"></pre></div>
 <div id="crt" aria-hidden="true"></div>
 <div id="sweep" aria-hidden="true"></div>
+<svg id="prov" aria-hidden="true"><defs><marker id="provhead" markerWidth="9" markerHeight="9"
+  refX="7.5" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" /></marker></defs></svg>
 
 <div id="help" class="overlay" style="display:none">
   <div class="helpbox">
@@ -266,8 +286,8 @@
       </div>
       <div>
         <b>click</b>
-        <div>a <span class="ky">local</span> → <i>why is it this value?</i></div>
-        <div>a <span class="ky">stack value</span> → jump to what produced it</div>
+        <div>a <span class="ky">local</span> → <i>why?</i> traces its causes with arrows</div>
+        <div>a <span class="ky">stack value</span> → hover to trace, click to jump</div>
         <div>a <span class="ky">source line</span> → toggle a breakpoint</div>
         <div>a <span class="ky">causal step</span> → teleport there</div>
         <div><kbd>share</kbd> → copy a link that reproduces this program</div>
@@ -375,8 +395,13 @@ let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSourc
 const breakpoints = new Set();
 let markA = null;
 const watches = [];
+// provenance: links a selected value to the source instruction(s) that produced it.
+// each link is { step, el?, sel? } — `step` is a frame index; the producing
+// instruction is that frame's last_ip. `el`/`sel` locate the value being explained.
+let provLinks = null;
 
 const $ = id => document.getElementById(id);
+const SVGNS = 'http://www.w3.org/2000/svg';
 
 // Typewriter boot sequence — pure cosmetic; the wasm boots in parallel.
 function bootSequence() {
@@ -463,6 +488,7 @@ function setCursor(i) {
   renderFrame(session.frame(cursor));
   renderDiff();
   renderWatches();
+  renderProvenance(); // re-anchor arrows after the frame's DOM is rebuilt
 }
 
 function scopeVars(f) {
@@ -643,7 +669,12 @@ function renderFrame(f) {
     row.className = 'row' + (jumpable ? ' clickable' : '');
     row.innerHTML = `<span><span class="meta">${i === 0 ? 'top →' : '     '}</span> <span class="val">${slot.value}</span></span>` +
       `<span class="meta">${jumpable ? '↩ from step ' + slot.origin : 'from step ' + slot.origin}</span>`;
-    if (jumpable) { row.title = 'jump to the step that produced this value'; row.onclick = () => setCursor(slot.origin); }
+    if (jumpable) {
+      row.title = 'hover to trace its origin · click to jump there';
+      row.onclick = () => setCursor(slot.origin);
+      row.onmouseenter = () => previewProvenance([{ step: slot.origin, el: row }]);
+      row.onmouseleave = endPreview;
+    }
     sb.appendChild(row);
   });
 
@@ -667,7 +698,7 @@ function renderFrame(f) {
   cb.innerHTML = '';
   [...f.call_stack].reverse().forEach((s, i) => {
     const cur = i === 0;
-    const locals = s.locals.map(v => `${v.name}=${v.value}`).join(' ');
+    const locals = s.locals.map(v => `${escapeHtml(v.name)}=${v.value}`).join(' ');
     const row = document.createElement('div');
     row.className = 'depthline';
     row.innerHTML = `<span class="fn ${cur ? 'cur' : ''}">${cur ? '▶ ' : '  '}${'&nbsp;'.repeat(i * 2)}${escapeHtml(s.func)}()</span>` +
@@ -720,12 +751,15 @@ function explain(name) {
   chain.forEach(node => {
     const el = document.createElement('div');
     el.className = 'cnode';
+    el.dataset.step = node.step;
     el.innerHTML = `<span class="step">step ${node.step}</span><span>${escapeHtml(node.description)}</span>`;
     el.onclick = () => setCursor(node.step);
     body.appendChild(el);
   });
   causalSteps = chain.map(n => n.step);
   renderMarks();
+  // draw an arrow from each producing instruction to its entry in the why-chain
+  setProvenance(chain.map(n => ({ step: n.step, sel: `#causalBody .cnode[data-step="${n.step}"]` })));
   setCursor(chain[0].step);
 }
 
@@ -736,7 +770,69 @@ function currentLocal(name) {
   return hit ? hit.value : null;
 }
 
-function hideCausal() { $('causal').classList.remove('show'); causalSteps = []; renderMarks(); }
+function hideCausal() { $('causal').classList.remove('show'); causalSteps = []; renderMarks(); clearProvenance(); }
+
+// --- provenance arrows: draw glowing links from producing instructions to the value ---
+// A "why?" trace is persistent; hovering a stack slot previews arrows transiently
+// on top, then restores the persistent trace when the pointer leaves.
+let persistentProv = null;
+function setProvenance(links) { persistentProv = links && links.length ? links : null; provLinks = persistentProv; renderProvenance(); }
+function clearProvenance() { persistentProv = null; provLinks = null; renderProvenance(); }
+function previewProvenance(links) { provLinks = links && links.length ? links : persistentProv; renderProvenance(); }
+function endPreview() { provLinks = persistentProv; renderProvenance(); }
+
+// Clamp a viewport-y into the visible area of an element's scrolling .body, so an
+// arrow to a row scrolled out of its panel points to that panel's edge instead.
+function clampToBody(el, y) {
+  const b = el.closest('.body');
+  if (!b) return y;
+  const r = b.getBoundingClientRect();
+  return Math.max(r.top + 3, Math.min(r.bottom - 3, y));
+}
+
+function renderProvenance() {
+  const svg = $('prov');
+  svg.querySelectorAll('path.link, circle.pin').forEach(n => n.remove());
+  document.querySelectorAll('.provsrc').forEach(el => {
+    el.classList.remove('provsrc');
+    const o = el.querySelector('.ord'); if (o) o.remove();
+  });
+  document.querySelectorAll('.provtarget').forEach(el => el.classList.remove('provtarget'));
+  if (!provLinks || frameCount <= 1 || !session) return;
+
+  provLinks.forEach((link, i) => {
+    const f = session.frame(link.step);
+    const idx = f.last_ip ?? f.ip;
+    if (idx == null) return;
+    const srcEl = document.querySelector(`#sourceBody .line[data-idx="${idx}"]`);
+    const tgt = (link.el && document.contains(link.el)) ? link.el
+      : (link.sel ? document.querySelector(link.sel) : null);
+    if (!srcEl || !tgt) return;
+
+    srcEl.classList.add('provsrc');
+    // ordinal badge when a value has more than one cause
+    if (provLinks.length > 1 && !srcEl.querySelector('.ord')) {
+      const b = document.createElement('span');
+      b.className = 'ord'; b.textContent = i + 1;
+      srcEl.appendChild(b);
+    }
+    tgt.classList.add('provtarget');
+
+    const s = srcEl.getBoundingClientRect(), t = tgt.getBoundingClientRect();
+    const sx = s.right - 2, sy = clampToBody(srcEl, s.top + s.height / 2);
+    const tx = t.left - 2, ty = clampToBody(tgt, t.top + t.height / 2);
+    const dx = Math.max(40, Math.min(160, Math.abs(tx - sx) * 0.5));
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('class', 'link');
+    path.setAttribute('d', `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`);
+    path.setAttribute('marker-end', 'url(#provhead)');
+    svg.appendChild(path);
+    const pin = document.createElementNS(SVGNS, 'circle');
+    pin.setAttribute('class', 'pin');
+    pin.setAttribute('cx', sx); pin.setAttribute('cy', sy); pin.setAttribute('r', '2.4');
+    svg.appendChild(pin);
+  });
+}
 
 // Timeline markers: red ticks at fault steps, yellow ticks at search matches.
 function renderMarks() {
@@ -819,6 +915,13 @@ function wireControls() {
   $('markBtn').onclick = markStep;
   $('watchInput').onkeydown = e => { if (e.key === 'Enter') { addWatch(e.target.value); e.target.value = ''; } };
   wireScrubTooltip();
+  // keep provenance arrows anchored as things scroll or the window resizes
+  let raf = 0;
+  const reflow = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; renderProvenance(); }); };
+  window.addEventListener('scroll', reflow, { passive: true });
+  window.addEventListener('resize', reflow);
+  $('sourceBody').addEventListener('scroll', reflow, { passive: true });
+  document.querySelectorAll('.panel .body').forEach(b => b.addEventListener('scroll', reflow, { passive: true }));
   $('searchGo').onclick = runSearch;
   $('search').onkeydown = e => { if (e.key === 'Enter') runSearch(); };
   $('nextMatch').onclick = () => cycleMatch(1);

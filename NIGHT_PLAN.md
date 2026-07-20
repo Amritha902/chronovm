@@ -47,7 +47,7 @@ add depth, harden quality.
       line each step, plus a slow CRT refresh sweep. (reduced-motion honored)
 - [x] Timeline track markers: red ticks at fault steps, yellow ticks at current
       search matches, subtle hover tooltip showing that step's summary.
-- [ ] Provenance visualization: when a stack value or variable is selected,
+- [x] Provenance visualization: when a stack value or variable is selected,
       visually connect it to the step(s) that produced it (highlight + arrows).
 - [ ] Micro-interactions: hover/focus states, button press feedback, copy button
       on the output panel, smooth panel transitions.
@@ -62,6 +62,9 @@ add depth, harden quality.
       inline assembler-error underlines.
 - [ ] Make timeline ticks clickable (jump straight to a fault/match on click),
       and restore the green "OK" styling in the typewriter boot sequence.
+- [ ] Provenance follow-ups: extend arrows to memory cells (trace an mload back to
+      the mstore that wrote it), and add a visible "clear trace" affordance so the
+      persistent "why?" arrows can be dismissed without re-recording.
 
 ### Theme B — Loopholes / robustness
 - [x] Integer overflow (add/sub/mul/div/neg) → clean fault, not a panic.
@@ -121,3 +124,10 @@ add depth, harden quality.
 - 2026-07-20 — Web: timeline track markers — red ticks at the fault step, yellow
   ticks at search matches, and a hover tooltip previewing any step's instruction
   + status (edge-clamped so it never spills off-screen). Verified in-browser.
+- 2026-07-20 — Web: provenance visualization — an SVG overlay draws glowing amber
+  arrows from the source instruction(s) that produced a value to the value itself.
+  A local's "why?" traces its whole causal chain (numbered producing lines →
+  chain entries); hovering a stack slot previews a single origin arrow, then
+  restores the persistent trace on leave. Arrows re-anchor on scroll/resize/scrub
+  (rAF-throttled) and honor reduced-motion. Verified in-browser (11-node chain
+  rendered correctly, no console errors).
