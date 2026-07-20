@@ -137,7 +137,7 @@
 
   /* timeline */
   .timeline { padding: 16px 20px 8px; }
-  .tl-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .tl-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   button {
     background: transparent; color: var(--p); border: 1px solid var(--p-faint); border-radius: 0;
     padding: 5px 12px; cursor: pointer; font: inherit; letter-spacing: 1px; text-shadow: var(--glow);
@@ -285,6 +285,8 @@
     <button id="toStart">⏮</button>
     <button id="stepBack">◀</button>
     <button id="stepFwd">▶</button>
+    <button id="stepOver" title="step over a call (skip its internals)">⤼over</button>
+    <button id="stepOut" title="step out of the current function">⤴out</button>
     <button id="toEnd">⏭</button>
     <button id="bpPrev" title="reverse to previous breakpoint">⇤bp</button>
     <button id="bpNext" title="continue to next breakpoint">bp⇥</button>
@@ -455,6 +457,26 @@ function scopeVars(f) {
 }
 
 function markStep() { markA = (markA === cursor) ? null : cursor; renderDiff(); }
+
+// Step over a call: advance to the next step at the same (or shallower) call
+// depth, skipping any frames spent inside a called function.
+function stepOver() {
+  stopPlay();
+  const depth = session.frame(cursor).call_stack.length;
+  for (let i = cursor + 1; i < frameCount; i++) {
+    if (session.frame(i).call_stack.length <= depth) { setCursor(i); return; }
+  }
+  setCursor(frameCount - 1);
+}
+// Step out: advance to where the current function returns (a shallower depth).
+function stepOut() {
+  stopPlay();
+  const depth = session.frame(cursor).call_stack.length;
+  for (let i = cursor + 1; i < frameCount; i++) {
+    if (session.frame(i).call_stack.length < depth) { setCursor(i); return; }
+  }
+  setCursor(frameCount - 1);
+}
 
 // Show what changed between the marked step A and the current step.
 function renderDiff() {
@@ -719,6 +741,8 @@ function wireControls() {
   $('toEnd').onclick = () => { stopPlay(); setCursor(frameCount - 1); };
   $('stepBack').onclick = () => { stopPlay(); setCursor(cursor - 1); };
   $('stepFwd').onclick = () => { stopPlay(); setCursor(cursor + 1); };
+  $('stepOver').onclick = stepOver;
+  $('stepOut').onclick = stepOut;
   $('bpNext').onclick = () => continueToBp(1);
   $('bpPrev').onclick = () => continueToBp(-1);
   $('markBtn').onclick = markStep;
