@@ -122,6 +122,20 @@ fn bubble_sort() {
 }
 
 #[test]
+fn sieve() {
+    let (output, error) = run("sieve.cvm", include_str!("../examples/sieve.cvm"));
+    assert_eq!(as_sequence(&output), "2 3 5 7 11 13 17 19 23 29");
+    assert_eq!(error, None);
+}
+
+#[test]
+fn fib_memo() {
+    let (output, error) = run("fib_memo.cvm", include_str!("../examples/fib_memo.cvm"));
+    assert_eq!(output, "55");
+    assert_eq!(error, None);
+}
+
+#[test]
 fn buggy() {
     let (_output, error) = run("buggy.cvm", include_str!("../examples/buggy.cvm"));
     let error = error.expect("buggy.cvm is expected to fault");

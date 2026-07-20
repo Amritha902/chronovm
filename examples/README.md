@@ -31,6 +31,8 @@ Replace `NAME` with any example below.
 | [`reverse_array.cvm`](reverse_array.cvm) | Writes `[1, 2, 3, 4, 5]` into memory, then prints the cells from last to first. | `5 4 3 2 1` |
 | [`array_max.cvm`](array_max.cvm) | Writes `[3, 7, 2, 9, 4]` into memory, then scans for the largest cell. | `9` |
 | [`bubble_sort.cvm`](bubble_sort.cvm) | Bubble-sorts `[5, 2, 8, 1, 9]` in place with nested loops, then prints it in order. | `1 2 5 8 9` |
+| [`sieve.cvm`](sieve.cvm) | Sieve of Eratosthenes over 0..30, using memory cells as composite flags, then prints the primes. | `2 3 5 7 11 13 17 19 23 29` |
+| [`fib_memo.cvm`](fib_memo.cvm) | Bottom-up Fibonacci memoization (`mem[k] = fib(k)`) filling the table in memory, then reads back `fib(10)`. | `55` |
 
 ## Debugger showpieces
 

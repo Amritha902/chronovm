@@ -1,0 +1,45 @@
+; Fibonacci by bottom-up memoization in linear memory: mem[k] = fib(k).
+;
+; Seed mem[0]=0 and mem[1]=1, then for k = 2..11 fill each cell from the two
+; below it: mem[k] = mem[k-1] + mem[k-2]. The whole Fibonacci table is left
+; standing in memory (mem[0..11] = 0 1 1 2 3 5 8 13 21 34 55 89); we read one
+; cell back out and print it. Scrub to watch the table build cell by cell.
+; Expected output: 55   (= fib(10) = mem[10])
+
+; ---------- seed the base cases ----------
+    push 0
+    push 0
+    mstore           ; mem[0] = 0
+    push 1
+    push 1
+    mstore           ; mem[1] = 1
+
+; ---------- fill mem[2..11] ----------
+    push 2
+    store k
+loop:
+    load k
+    push 11
+    le               ; k <= 11 ?
+    jz done
+    load k
+    push 1
+    sub
+    mload            ; mem[k-1]
+    load k
+    push 2
+    sub
+    mload            ; mem[k-2]
+    add              ; mem[k-1] + mem[k-2]
+    load k
+    mstore           ; mem[k] = that sum
+    load k
+    push 1
+    add
+    store k
+    jmp loop
+done:
+    push 10
+    mload
+    print            ; 55
+    halt

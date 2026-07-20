@@ -1,0 +1,69 @@
+; Sieve of Eratosthenes over 0..30 using linear memory as a flag array.
+;
+; Every cell starts auto-zeroed. mem[n]==1 will mean "n is composite".
+; Phase 1 walks i = 2..5 (only i where i*i <= 30 can seed new composites);
+; for each still-unmarked i it strikes out i*i, i*i+i, ... up to 30.
+; Phase 2 scans 2..30 in order and prints each n whose flag is still 0.
+; Scrub Phase 1 to watch multiples of 2, then 3, then 5 light up in memory.
+; Expected output: 2 3 5 7 11 13 17 19 23 29
+
+; ---------- Phase 1: mark composites ----------
+    push 2
+    store i
+souter:
+    load i
+    load i
+    mul              ; i*i
+    push 30
+    le               ; i*i <= 30 ?
+    jz sieve_done
+    load i
+    mload            ; mem[i]
+    jnz next_i       ; already composite -> it can't seed new ones, skip
+    ; j = i*i
+    load i
+    load i
+    mul
+    store j
+sinner:
+    load j
+    push 30
+    le               ; j <= 30 ?
+    jz next_i
+    push 1
+    load j
+    mstore           ; mem[j] = 1  (composite)
+    load j
+    load i
+    add
+    store j
+    jmp sinner
+next_i:
+    load i
+    push 1
+    add
+    store i
+    jmp souter
+sieve_done:
+
+; ---------- Phase 2: print survivors in order ----------
+    push 2
+    store k
+pouter:
+    load k
+    push 30
+    le               ; k <= 30 ?
+    jz done
+    load k
+    mload            ; mem[k]
+    jnz pnext        ; composite -> skip
+    load k
+    print            ; prime!
+pnext:
+    load k
+    push 1
+    add
+    store k
+    jmp pouter
+done:
+    halt
