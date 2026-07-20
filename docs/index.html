@@ -144,6 +144,7 @@
   .tl-mark { position: absolute; top: 1px; width: 2px; height: 7px; transform: translateX(-1px); }
   .tl-mark.fault { background: var(--fault); box-shadow: 0 0 6px var(--fault); }
   .tl-mark.match { background: var(--amber); box-shadow: 0 0 5px rgba(255,198,77,.65); }
+  .tl-mark.cause { background: var(--p); box-shadow: 0 0 5px var(--p); }
   .tl-tip { position: absolute; bottom: 100%; margin-bottom: 7px; transform: translateX(-50%);
     background: var(--bg2); border: 1px solid var(--p-faint); padding: 3px 9px; white-space: nowrap;
     font-size: 11.5px; color: var(--p-bright); pointer-events: none; z-index: 30;
@@ -291,7 +292,7 @@ const EXAMPLES = {
 };
 
 let session = null, program = null, frameCount = 0, cursor = 0;
-let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSource = '';
+let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSource = '', causalSteps = [];
 
 const $ = id => document.getElementById(id);
 
@@ -413,9 +414,11 @@ function renderFrame(f) {
   if (f.stack.length === 0) sb.innerHTML = '<div class="meta">(empty)</div>';
   [...f.stack].reverse().forEach((slot, i) => {
     const row = document.createElement('div');
-    row.className = 'row';
+    const jumpable = slot.origin > 0;
+    row.className = 'row' + (jumpable ? ' clickable' : '');
     row.innerHTML = `<span><span class="meta">${i === 0 ? 'top →' : '     '}</span> <span class="val">${slot.value}</span></span>` +
-      `<span class="meta">from step ${slot.origin}</span>`;
+      `<span class="meta">${jumpable ? '↩ from step ' + slot.origin : 'from step ' + slot.origin}</span>`;
+    if (jumpable) { row.title = 'jump to the step that produced this value'; row.onclick = () => setCursor(slot.origin); }
     sb.appendChild(row);
   });
 
@@ -477,6 +480,8 @@ function explain(name) {
     el.onclick = () => setCursor(node.step);
     body.appendChild(el);
   });
+  causalSteps = chain.map(n => n.step);
+  renderMarks();
   setCursor(chain[0].step);
 }
 
@@ -487,7 +492,7 @@ function currentLocal(name) {
   return hit ? hit.value : null;
 }
 
-function hideCausal() { $('causal').classList.remove('show'); }
+function hideCausal() { $('causal').classList.remove('show'); causalSteps = []; renderMarks(); }
 
 // Timeline markers: red ticks at fault steps, yellow ticks at search matches.
 function renderMarks() {
@@ -500,7 +505,8 @@ function renderMarks() {
     m.style.left = (step / (frameCount - 1)) * 100 + '%';
     lane.appendChild(m);
   };
-  matches.forEach(s => place(s, 'match')); // matches under faults
+  causalSteps.forEach(s => place(s, 'cause')); // provenance chain (under others)
+  matches.forEach(s => place(s, 'match'));
   faultSteps.forEach(s => place(s, 'fault'));
 }
 

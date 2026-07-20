@@ -152,6 +152,28 @@ See §4 for how locals scope to a call frame.
 | `print`     | `( a -- )`   | Pop the top value and print it. |
 | `halt`      | `( -- )`     | Stop execution immediately. |
 
+### 3.7 Memory
+
+Alongside the value stack and named locals, ChronoVM has a single flat array of
+**linear memory** that any frame can read and write.
+
+| Instruction | Stack effect        | Description |
+|-------------|---------------------|-------------|
+| `mstore`    | `( value addr -- )` | Pop `addr` (top) then `value`; store `value` into memory cell `addr`. |
+| `mload`     | `( addr -- value )` | Pop `addr` and push the current contents of memory cell `addr`. |
+
+#### Linear memory
+
+Linear memory is a flat block of integer cells at addresses **`0` through
+`65535`**. Every cell is **auto-zeroed** at program start, so `mload` on a cell
+that has never been written yields `0` rather than faulting. Unlike named
+locals, memory is **not frame-scoped**: it is shared across all call frames and
+persists for the whole run, which makes it the natural place to keep arrays and
+other data that outlives a single function call.
+
+An address outside `0..=65535` — whether **negative** or **out of range** — is a
+fault on both `mstore` and `mload` (see **memory address out of bounds** in §7).
+
 ---
 
 ## 4. Variables and call frames
@@ -211,6 +233,8 @@ are:
   wrapped silently; the overflow is reported as a fault.
 - **Undefined variable** — `load NAME` where `NAME` has not been `store`d in the
   current call frame.
+- **Memory address out of bounds** — `mstore` or `mload` with an address outside
+  the valid range `0..=65535` (negative or too large).
 - **Step limit exceeded** — the VM enforces a maximum number of executed
   instructions to stop runaway loops (for example, a `jmp` loop with no exit).
   When the limit is hit, execution stops with a step-limit fault instead of
@@ -294,4 +318,28 @@ square:              ; ( n -- n*n )
     load t
     mul              ; n * n
     ret              ; leave the product on the shared stack
+```
+
+### 8.4 Linear memory — write a cell, then read it back
+
+Stores `42` into memory cell `100`, reads it back, and prints `42`. Recall that
+`mstore` pops the address off the top and the value beneath it.
+
+```
+    push 42
+    push 100
+    mstore           ; mem[100] = 42     ( value=42 addr=100 -- )
+    push 100
+    mload            ; push mem[100]      ( addr=100 -- 42 )
+    print            ; prints 42
+    halt
+```
+
+An untouched cell reads back as `0` — memory is zero-initialized:
+
+```
+    push 7
+    mload            ; mem[7] was never written
+    print            ; prints 0
+    halt
 ```

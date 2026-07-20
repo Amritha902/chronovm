@@ -1,0 +1,41 @@
+; Reverse-print an array held in linear memory — demonstrates mstore / mload.
+;
+; Writes [1, 2, 3, 4, 5] into mem[0..5], then walks the index from 4 down to 0
+; printing mem[i] each step. Prints: 5 4 3 2 1
+; Scrub it to watch one `mload` instruction revisit cells 4,3,2,1,0 in turn.
+
+; --- write the array: (value addr -- ) ---
+    push 1
+    push 0
+    mstore
+    push 2
+    push 1
+    mstore
+    push 3
+    push 2
+    mstore
+    push 4
+    push 3
+    mstore
+    push 5
+    push 4
+    mstore
+
+; --- print mem[4], mem[3], ... mem[0] ---
+    push 4
+    store i
+loop:
+    load i
+    push 0
+    ge               ; i >= 0 ?
+    jz done
+    load i
+    mload            ; push mem[i]
+    print
+    load i
+    push 1
+    sub
+    store i
+    jmp loop
+done:
+    halt

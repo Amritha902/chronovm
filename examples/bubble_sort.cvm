@@ -1,0 +1,92 @@
+; Bubble-sort an array in place in linear memory — mstore / mload + nested loops.
+;
+; Writes [5, 2, 8, 1, 9] into mem[0..5], then runs 5 passes; each pass compares
+; adjacent cells mem[j], mem[j+1] and swaps when out of order. Finally prints
+; every cell in order. Prints: 1 2 5 8 9
+; Scrub to watch the largest value bubble rightward pass by pass.
+
+; --- write the array: (value addr -- ) ---
+    push 5
+    push 0
+    mstore
+    push 2
+    push 1
+    mstore
+    push 8
+    push 2
+    mstore
+    push 1
+    push 3
+    mstore
+    push 9
+    push 4
+    mstore
+
+; --- outer pass counter i = 0..5 ---
+    push 0
+    store i
+outer:
+    load i
+    push 5
+    lt               ; i < 5 ?
+    jz outerdone
+    push 0
+    store j
+inner:
+    load j
+    push 4
+    lt               ; j < 4 (compare j and j+1) ?
+    jz innerdone
+    load j
+    mload
+    store a          ; a = mem[j]
+    load j
+    push 1
+    add
+    mload
+    store b          ; b = mem[j+1]
+    load a
+    load b
+    gt               ; a > b ?  (out of order)
+    jz noswap
+    ; swap: mem[j] = b, mem[j+1] = a
+    load b
+    load j
+    mstore
+    load a
+    load j
+    push 1
+    add
+    mstore
+noswap:
+    load j
+    push 1
+    add
+    store j
+    jmp inner
+innerdone:
+    load i
+    push 1
+    add
+    store i
+    jmp outer
+outerdone:
+
+; --- print mem[0..5] in order ---
+    push 0
+    store k
+printloop:
+    load k
+    push 5
+    lt
+    jz printdone
+    load k
+    mload
+    print
+    load k
+    push 1
+    add
+    store k
+    jmp printloop
+printdone:
+    halt

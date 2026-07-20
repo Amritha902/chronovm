@@ -88,6 +88,40 @@ fn collatz() {
 }
 
 #[test]
+fn array_sum() {
+    let (output, error) = run("array_sum.cvm", include_str!("../examples/array_sum.cvm"));
+    assert_eq!(output, "25");
+    assert_eq!(error, None);
+}
+
+#[test]
+fn reverse_array() {
+    let (output, error) = run(
+        "reverse_array.cvm",
+        include_str!("../examples/reverse_array.cvm"),
+    );
+    assert_eq!(as_sequence(&output), "5 4 3 2 1");
+    assert_eq!(error, None);
+}
+
+#[test]
+fn array_max() {
+    let (output, error) = run("array_max.cvm", include_str!("../examples/array_max.cvm"));
+    assert_eq!(output, "9");
+    assert_eq!(error, None);
+}
+
+#[test]
+fn bubble_sort() {
+    let (output, error) = run(
+        "bubble_sort.cvm",
+        include_str!("../examples/bubble_sort.cvm"),
+    );
+    assert_eq!(as_sequence(&output), "1 2 5 8 9");
+    assert_eq!(error, None);
+}
+
+#[test]
 fn buggy() {
     let (_output, error) = run("buggy.cvm", include_str!("../examples/buggy.cvm"));
     let error = error.expect("buggy.cvm is expected to fault");

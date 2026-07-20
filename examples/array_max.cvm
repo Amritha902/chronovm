@@ -1,0 +1,53 @@
+; Find the maximum of an array held in linear memory — mstore / mload + a loop.
+;
+; Writes [3, 7, 2, 9, 4] into mem[0..5]. Seeds max = mem[0], then scans
+; mem[1..5], keeping the larger of (max, mem[i]) each step. Prints: 9
+; Scrub to watch `max` climb 3 -> 7 -> 9 and hold as later cells lose out.
+
+; --- write the array: (value addr -- ) ---
+    push 3
+    push 0
+    mstore
+    push 7
+    push 1
+    mstore
+    push 2
+    push 2
+    mstore
+    push 9
+    push 3
+    mstore
+    push 4
+    push 4
+    mstore
+
+; --- max = mem[0]; i = 1 ---
+    push 0
+    mload
+    store max
+    push 1
+    store i
+loop:
+    load i
+    push 5
+    lt               ; i < 5 ?
+    jz done
+    load i
+    mload
+    store cur        ; cur = mem[i]
+    load cur
+    load max
+    gt               ; cur > max ?
+    jz skip
+    load cur
+    store max        ; new maximum
+skip:
+    load i
+    push 1
+    add
+    store i
+    jmp loop
+done:
+    load max
+    print            ; 9
+    halt

@@ -23,6 +23,15 @@ Replace `NAME` with any example below.
 | [`gcd.cvm`](gcd.cvm) | Greatest common divisor by Euclid's subtraction method (gcd 48, 18). | `6` |
 | [`collatz.cvm`](collatz.cvm) | Collatz sequence from n = 7, printing every term until it hits 1. | `7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1` |
 
+## Linear-memory examples
+
+| Example | What it does | Output |
+| --- | --- | --- |
+| [`array_sum.cvm`](array_sum.cvm) | Writes `[5, 2, 8, 1, 9]` into memory, then loops summing the cells with `mload`. | `25` |
+| [`reverse_array.cvm`](reverse_array.cvm) | Writes `[1, 2, 3, 4, 5]` into memory, then prints the cells from last to first. | `5 4 3 2 1` |
+| [`array_max.cvm`](array_max.cvm) | Writes `[3, 7, 2, 9, 4]` into memory, then scans for the largest cell. | `9` |
+| [`bubble_sort.cvm`](bubble_sort.cvm) | Bubble-sorts `[5, 2, 8, 1, 9]` in place with nested loops, then prints it in order. | `1 2 5 8 9` |
+
 ## Debugger showpieces
 
 | Example | What it does | Output |
