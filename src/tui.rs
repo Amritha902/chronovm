@@ -392,17 +392,30 @@ fn render_source(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_right(f: &mut Frame, app: &App, area: Rect) {
-    // Right column, top to bottom: stack+locals row, call stack, output, and
-    // (when open) the causal panel.
+    // Right column, top to bottom: stack+locals row, call stack, (memory when a
+    // program uses it), output, and (when open) the causal panel.
     let has_causal = app.causal.is_some();
+    let has_mem = !app.trace.frames[app.cursor].memory.is_empty();
+
+    let mut constraints = vec![Constraint::Percentage(40), Constraint::Percentage(20)];
+    let mem_idx = if has_mem {
+        constraints.push(Constraint::Length(4));
+        Some(constraints.len() - 1)
+    } else {
+        None
+    };
+    constraints.push(Constraint::Min(3)); // output absorbs the remaining space
+    let out_idx = constraints.len() - 1;
+    let causal_idx = if has_causal {
+        constraints.push(Constraint::Percentage(22));
+        Some(constraints.len() - 1)
+    } else {
+        None
+    };
+
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(40),                               // stack | locals
-            Constraint::Percentage(22),                               // call stack
-            Constraint::Percentage(if has_causal { 16 } else { 38 }), // output
-            Constraint::Percentage(if has_causal { 22 } else { 0 }),  // causal
-        ])
+        .constraints(constraints)
         .split(area);
 
     let state_row = Layout::default()
@@ -413,10 +426,44 @@ fn render_right(f: &mut Frame, app: &App, area: Rect) {
     render_stack(f, app, state_row[0]);
     render_vars(f, app, state_row[1]);
     render_callstack(f, app, rows[1]);
-    render_output(f, app, rows[2]);
-    if has_causal {
-        render_causal(f, app, rows[3]);
+    if let Some(i) = mem_idx {
+        render_memory(f, app, rows[i]);
     }
+    render_output(f, app, rows[out_idx]);
+    if let Some(i) = causal_idx {
+        render_causal(f, app, rows[i]);
+    }
+}
+
+/// The memory panel (shown only when a program uses `mstore`/`mload`). Cells
+/// that changed since the previous step are highlighted, mirroring the web UI.
+fn render_memory(f: &mut Frame, app: &App, area: Rect) {
+    let mem = &app.trace.frames[app.cursor].memory;
+    let prev = app
+        .cursor
+        .checked_sub(1)
+        .map(|i| &app.trace.frames[i].memory);
+    let mut spans: Vec<Span> = Vec::new();
+    for (addr, &v) in mem.iter().enumerate() {
+        let changed = prev.is_some_and(|p| p.get(addr) != Some(&v));
+        let style = if changed {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        spans.push(Span::styled(format!("[{addr}]{v}  "), style));
+    }
+    let para = Paragraph::new(Line::from(spans))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" memory · {} cells ", mem.len()))
+                .border_style(Style::default().fg(Color::Green)),
+        )
+        .wrap(Wrap { trim: false });
+    f.render_widget(para, area);
 }
 
 fn render_stack(f: &mut Frame, app: &App, area: Rect) {
@@ -740,6 +787,21 @@ mod tests {
         fact:\nstore n\nload n\npush 1\nle\njz recurse\npush 1\nret\n\
         recurse:\nload n\npush 1\nsub\ncall fact\nload n\nmul\nstore acc\nload acc\nret\n";
         App::new(record(assemble(src).unwrap()))
+    }
+
+    /// A program that uses linear memory should surface the memory panel.
+    #[test]
+    fn memory_panel_appears_for_array_programs() {
+        // Store two cells, then park on the final frame.
+        let src = "push 7\npush 0\nmstore\npush 9\npush 1\nmstore\nhalt\n";
+        let mut app = App::new(record(assemble(src).unwrap()));
+        app.cursor = app.last();
+        let mut term = Terminal::new(TestBackend::new(120, 44)).unwrap();
+        term.draw(|f| ui(f, &app)).unwrap();
+        let rendered = buffer_text(term.backend().buffer());
+        assert!(rendered.contains("memory"), "memory panel should be shown");
+        assert!(rendered.contains("[0]7"), "cell 0 should read 7");
+        assert!(rendered.contains("[1]9"), "cell 1 should read 9");
     }
 
     /// Rendering must not panic at any scrub position — including step 0, the
