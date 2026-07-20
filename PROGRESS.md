@@ -50,15 +50,22 @@ and `wasm32`. The browser and terminal run the *same* VM and causal engine.
 
 ## Health
 
-- Tests: **27 passing** (18 unit + 9 integration)
+- Tests: **34 passing** (21 unit + 13 integration)
 - Clippy: **clean** · rustfmt: **clean**
-- Examples verified: factorial→120, fib→0 1 1 2 3 5 8 13 21 34, recursive→120,
-  gcd→6, sum_to_n→55, power→1024, collatz→full sequence, countdown→5 4 3 2 1
+- Examples verified: factorial→120, fib→…, recursive→120, gcd→6, sum_to_n→55,
+  power→1024, collatz→full sequence, countdown→5 4 3 2 1, array_sum→25,
+  reverse_array→5 4 3 2 1, array_max→9, bubble_sort→1 2 5 8 9
 - Live demo: up
 - CI config written (in `ci/ci.yml`; owner activates — see NIGHT_PLAN "Needs owner")
 
 ## Build log (newest first)
 
+- **Memory panel + array examples** — the web UI shows linear memory as a live
+  cell grid (changed cells glow); "array sum" / "bubble sort" buttons added.
+- **Linear memory opcodes** — `mstore`/`mload` with provenance through memory;
+  array_sum/reverse_array/array_max/bubble_sort examples + tests.
+- **Provenance viz (web)** — stack slots click to jump to the step that produced
+  them; the causal chain shows as markers on the timeline.
 - **share-URL** — a "share" button encodes the running program into the link
   (`#p=…`); opening a shared link reproduces it.
 - **Docs blitz (parallel agents)** — README overhaul, ARCHITECTURE.md,
