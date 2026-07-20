@@ -74,6 +74,9 @@
     border: 1px solid var(--p-faint); transition: .12s; }
   header a::before { content: "[ "; } header a::after { content: " ]"; }
   header a:hover { color: var(--bg); background: var(--p); border-color: var(--p); text-shadow: none; }
+  #share { color: var(--p-dim); }
+  #share::before { content: "[ "; } #share::after { content: " ]"; }
+  .sharemsg { color: var(--p-bright); font-size: 11px; min-width: 84px; }
 
   .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 22px 20px; align-items: start; }
   @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
@@ -216,6 +219,7 @@
   <span class="tag">// a bytecode VM you can scrub like a video</span>
   <span class="spacer"></span>
   <span class="live"><span class="dot"></span>wasm online</span>
+  <button id="share">share</button><span id="shareMsg" class="sharemsg"></span>
   <a href="https://github.com/Amritha902/chronovm" target="_blank">github</a>
 </header>
 
@@ -287,7 +291,7 @@ const EXAMPLES = {
 };
 
 let session = null, program = null, frameCount = 0, cursor = 0;
-let matches = [], matchIdx = -1, playTimer = null, faultSteps = [];
+let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSource = '';
 
 const $ = id => document.getElementById(id);
 
@@ -318,12 +322,31 @@ bootSequence();
 async function main() {
   await init();
   wireControls();
-  $('src').value = EXAMPLES.recursive;
-  record(EXAMPLES.recursive);
+  const initial = decodeShared() || EXAMPLES.recursive;
+  $('src').value = initial;
+  record(initial);
+}
+
+// Share: encode the current program into the URL so a link reproduces it.
+function decodeShared() {
+  const m = location.hash.match(/^#p=(.+)$/);
+  if (!m) return null;
+  try { return decodeURIComponent(escape(atob(decodeURIComponent(m[1])))); }
+  catch { return null; }
+}
+function shareLink() {
+  const b64 = encodeURIComponent(btoa(unescape(encodeURIComponent(currentSource))));
+  const url = location.origin + location.pathname + '#p=' + b64;
+  history.replaceState(null, '', url);
+  const msg = $('shareMsg');
+  const done = t => { msg.textContent = t; setTimeout(() => { msg.textContent = ''; }, 2200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => done('link copied ✓'), () => done('in address bar'));
+  else done('in address bar');
 }
 
 function record(src) {
   stopPlay();
+  currentSource = src;
   try {
     session = new Session(src);
     $('recError').textContent = '';
@@ -542,6 +565,7 @@ function wireControls() {
   $('nextMatch').onclick = () => cycleMatch(1);
   $('prevMatch').onclick = () => cycleMatch(-1);
   $('record').onclick = () => record($('src').value);
+  $('share').onclick = shareLink;
   document.querySelectorAll('[data-ex]').forEach(b => {
     b.onclick = () => { $('src').value = EXAMPLES[b.dataset.ex]; record(EXAMPLES[b.dataset.ex]); };
   });
