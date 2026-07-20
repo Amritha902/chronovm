@@ -100,7 +100,12 @@ add depth, harden quality.
 ---
 
 ## Needs owner (decisions I won't make alone)
-- (none yet)
+- **Activate CI.** The CI workflow is written and lives at `ci/ci.yml`, but it
+  couldn't be pushed to `.github/workflows/` because the `gh` OAuth token lacks
+  the `workflow` scope. To turn it on:
+  1. `gh auth refresh -h github.com -s workflow`
+  2. `mkdir -p .github/workflows && git mv ci/ci.yml .github/workflows/ci.yml`
+  3. `git commit -m "Enable CI" && git push`
 
 ## Done log
 - 2026-07-19 — Fixed integer-overflow crash (checked arithmetic → VM fault) + test.

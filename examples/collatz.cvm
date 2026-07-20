@@ -1,0 +1,43 @@
+; Collatz sequence starting from n = 7.
+;
+; Prints each term, then: if n is even, n = n / 2; if n is odd, n = 3n + 1.
+; Stops once n reaches 1. Uses `mod` to test even vs. odd.
+;
+; Prints: 7 22 11 34 17 52 26 13 40 20 10 5 16 8 4 2 1
+
+    push 7
+    store n          ; n = 7
+
+loop:
+    load n
+    print            ; emit the current term
+
+    load n
+    push 1
+    eq               ; n == 1 ?
+    jnz done
+
+    load n
+    push 2
+    mod              ; n mod 2
+    jz even          ; remainder 0 -> n is even
+
+    ; odd:  n = 3 * n + 1
+    load n
+    push 3
+    mul
+    push 1
+    add
+    store n
+    jmp loop
+
+even:
+    ; even:  n = n / 2
+    load n
+    push 2
+    div
+    store n
+    jmp loop
+
+done:
+    halt

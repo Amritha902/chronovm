@@ -36,8 +36,7 @@ fn main() -> ExitCode {
 }
 
 fn run(command: &str, path: &str) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let src = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read `{path}`: {e}"))?;
+    let src = std::fs::read_to_string(path).map_err(|e| format!("cannot read `{path}`: {e}"))?;
     let program = assembler::assemble(&src)?;
 
     match command {

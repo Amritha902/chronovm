@@ -1,0 +1,35 @@
+; Integer power: base ^ exp by repeated multiplication.
+;
+; Multiplies `result` by `base` exactly `exp` times, counting `exp` down to 0.
+; Here base = 2 and exp = 10.
+;
+; Prints 1024.
+
+    push 2
+    store base       ; base = 2
+    push 10
+    store exp         ; exp = 10
+    push 1
+    store result      ; result = 1
+
+loop:
+    load exp
+    push 0
+    gt               ; exp > 0 ?
+    jz done
+
+    load result
+    load base
+    mul
+    store result      ; result = result * base
+
+    load exp
+    push 1
+    sub
+    store exp         ; exp = exp - 1
+    jmp loop
+
+done:
+    load result
+    print            ; prints 1024
+    halt

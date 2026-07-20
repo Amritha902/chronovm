@@ -171,7 +171,13 @@ mod tests {
     fn fault_query_finds_the_fault() {
         let t = record(assemble(include_str!("../examples/buggy.cvm")).unwrap());
         let pred = parse("fault").unwrap();
-        let hits: Vec<usize> = (0..=t.last()).filter(|&i| pred.holds(&t.frames[i])).collect();
-        assert_eq!(hits.len(), 1, "exactly the final faulting step should match");
+        let hits: Vec<usize> = (0..=t.last())
+            .filter(|&i| pred.holds(&t.frames[i]))
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "exactly the final faulting step should match"
+        );
     }
 }

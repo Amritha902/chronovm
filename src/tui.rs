@@ -87,10 +87,7 @@ impl App {
                     return;
                 }
                 // First match at or after the cursor, wrapping to the start.
-                let idx = matches
-                    .iter()
-                    .position(|&m| m >= self.cursor)
-                    .unwrap_or(0);
+                let idx = matches.iter().position(|&m| m >= self.cursor).unwrap_or(0);
                 let step = matches[idx];
                 self.search = Some(SearchState {
                     query,
@@ -113,7 +110,9 @@ impl App {
 
     /// Move to the next (`delta > 0`) or previous match, wrapping around.
     fn cycle_match(&mut self, delta: isize) {
-        let Some(search) = &mut self.search else { return };
+        let Some(search) = &mut self.search else {
+            return;
+        };
         let len = search.matches.len();
         if len == 0 {
             return;
@@ -399,8 +398,8 @@ fn render_right(f: &mut Frame, app: &App, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(40),                          // stack | locals
-            Constraint::Percentage(22),                          // call stack
+            Constraint::Percentage(40),                               // stack | locals
+            Constraint::Percentage(22),                               // call stack
             Constraint::Percentage(if has_causal { 16 } else { 38 }), // output
             Constraint::Percentage(if has_causal { 22 } else { 0 }),  // causal
         ])
@@ -468,14 +467,8 @@ fn render_vars(f: &mut Frame, app: &App, area: Rect) {
         let def = frame.var_def().get(name).copied().unwrap_or(0);
         let marker = if selected { "◆" } else { " " };
         let line = Line::from(vec![
-            Span::styled(
-                format!(" {marker} "),
-                Style::default().fg(Color::Yellow),
-            ),
-            Span::styled(
-                format!("{name:<8}"),
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled(format!(" {marker} "), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{name:<8}"), Style::default().fg(Color::Cyan)),
             Span::raw("= "),
             Span::styled(
                 format!("{val}"),
@@ -518,7 +511,7 @@ fn render_callstack(f: &mut Frame, app: &App, area: Rect) {
     for (rev_i, scope) in frame.call_stack.iter().rev().enumerate() {
         let is_current = rev_i == 0;
         let level = depth - 1 - rev_i; // 0 == main
-        // Compact one-line summary of this frame's locals, e.g. "n=3 acc=6".
+                                       // Compact one-line summary of this frame's locals, e.g. "n=3 acc=6".
         let locals: String = scope
             .locals
             .iter()
@@ -533,7 +526,11 @@ fn render_callstack(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 format!("{}()", scope.func),
                 Style::default()
-                    .fg(if is_current { Color::Magenta } else { Color::Gray })
+                    .fg(if is_current {
+                        Color::Magenta
+                    } else {
+                        Color::Gray
+                    })
                     .add_modifier(if is_current {
                         Modifier::BOLD
                     } else {
@@ -604,13 +601,17 @@ fn render_causal(f: &mut Frame, app: &App, area: Rect) {
         };
         items.push(ListItem::new(line).style(style));
     }
-    let title = format!(" why is `{}` == {}? · [↑↓] walk causes · [esc] close ", view.var, {
-        app.trace.frames[app.cursor]
-            .vars()
-            .get(&view.var)
-            .copied()
-            .unwrap_or_default()
-    });
+    let title = format!(
+        " why is `{}` == {}? · [↑↓] walk causes · [esc] close ",
+        view.var,
+        {
+            app.trace.frames[app.cursor]
+                .vars()
+                .get(&view.var)
+                .copied()
+                .unwrap_or_default()
+        }
+    );
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
@@ -635,12 +636,7 @@ fn render_timeline(f: &mut Frame, app: &App, area: Rect) {
         "paused".to_string()
     };
 
-    let label = format!(
-        "step {} / {}   ·   {}",
-        app.cursor,
-        app.last(),
-        status
-    );
+    let label = format!("step {} / {}   ·   {}", app.cursor, app.last(), status);
     let color = if frame.error.is_some() {
         Color::Red
     } else if app.playing {
@@ -696,7 +692,9 @@ fn render_help(f: &mut Frame, app: &App, area: Rect) {
 fn search_status_line(search: &SearchState) -> Line<'static> {
     let head = Span::styled(
         format!("  /{}  ", search.query),
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
     );
     if let Some(err) = &search.error {
         return Line::from(vec![
@@ -799,7 +797,10 @@ mod tests {
         app.cursor = 0;
         app.commit_search("depth >= 5".to_string());
         let search = app.search.as_ref().expect("search recorded");
-        assert!(!search.matches.is_empty(), "depth>=5 should match in fact(5)");
+        assert!(
+            !search.matches.is_empty(),
+            "depth>=5 should match in fact(5)"
+        );
         // The cursor landed on a frame that actually satisfies the query.
         assert!(app.trace.frames[app.cursor].call_stack.len() >= 5);
 

@@ -1,0 +1,24 @@
+; A gentle first example: count down from 5 to 1, printing each number.
+;
+; Print i, decrement it, and loop again while i is still above 0.
+;
+; Prints: 5 4 3 2 1
+
+    push 5
+    store i          ; i = 5
+
+loop:
+    load i
+    print            ; print the current value
+
+    load i
+    push 1
+    sub
+    store i          ; i = i - 1
+
+    load i
+    push 0
+    gt               ; i > 0 ?
+    jnz loop         ; keep going while there is more to count
+
+    halt

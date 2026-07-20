@@ -1,0 +1,35 @@
+; Sum of the first n integers: 1 + 2 + ... + n.
+;
+; Accumulates the running total in `acc` while `i` walks from 1 up to n.
+; Here n = 10.
+;
+; Prints 55.
+
+    push 10
+    store n          ; n = 10
+    push 0
+    store acc        ; acc = 0
+    push 1
+    store i          ; i = 1
+
+loop:
+    load i
+    load n
+    le               ; i <= n ?
+    jz done
+
+    load acc
+    load i
+    add
+    store acc        ; acc = acc + i
+
+    load i
+    push 1
+    add
+    store i          ; i = i + 1
+    jmp loop
+
+done:
+    load acc
+    print            ; prints 55
+    halt

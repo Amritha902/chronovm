@@ -145,8 +145,10 @@ fn parse_instruction(
             .map_err(|_| err(format!("`{op}` argument must be an integer")))
     };
     let name_arg = |a: Option<&str>| -> Result<String, AsmError> {
-        Ok(a.ok_or_else(|| err(format!("`{op}` expects a variable name")))?
-            .to_string())
+        Ok(
+            a.ok_or_else(|| err(format!("`{op}` expects a variable name")))?
+                .to_string(),
+        )
     };
     let target_arg = |a: Option<&str>| -> Result<usize, AsmError> {
         let name = a.ok_or_else(|| err(format!("`{op}` expects a label")))?;

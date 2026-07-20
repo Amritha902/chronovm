@@ -1,0 +1,42 @@
+; Greatest common divisor via Euclid's subtraction method.
+;
+; Repeatedly subtract the smaller number from the larger until the two are
+; equal; that shared value is the GCD. Here gcd(48, 18) is computed.
+;
+; Prints 6.
+
+    push 48
+    store a          ; a = 48
+    push 18
+    store b          ; b = 18
+
+loop:
+    load a
+    load b
+    eq               ; a == b ?
+    jnz done         ; if equal, a holds the GCD
+
+    load a
+    load b
+    gt               ; a > b ?
+    jz smaller
+
+    ; a > b:  a = a - b
+    load a
+    load b
+    sub
+    store a
+    jmp loop
+
+smaller:
+    ; a <= b (and a != b, so a < b):  b = b - a
+    load b
+    load a
+    sub
+    store b
+    jmp loop
+
+done:
+    load a
+    print            ; prints 6
+    halt

@@ -52,7 +52,10 @@ pub enum Instruction {
     /// Call a function: push a new call frame (with its own locals) and jump to
     /// `target`. `name` is the label, kept for the debugger's call-stack panel.
     /// Arguments and return values are passed on the shared value stack.
-    Call { target: usize, name: String },
+    Call {
+        target: usize,
+        name: String,
+    },
     /// Return from the current function: pop the call frame and resume in the
     /// caller. Any value left on the stack is the return value.
     Ret,

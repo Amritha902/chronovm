@@ -105,9 +105,7 @@ impl Trace {
 
     /// Did the program end in an error?
     pub fn faulted(&self) -> Option<&str> {
-        self.frames
-            .last()
-            .and_then(|f| f.error.as_deref())
+        self.frames.last().and_then(|f| f.error.as_deref())
     }
 }
 
@@ -188,7 +186,9 @@ pub fn record(program: Program) -> Trace {
                 Some(m.prev_ip),
                 Vec::new(),
                 None,
-                Some(format!("step limit ({STEP_LIMIT}) exceeded — infinite loop?")),
+                Some(format!(
+                    "step limit ({STEP_LIMIT}) exceeded — infinite loop?"
+                )),
             );
             last.halted = true;
             frames.push(last);
