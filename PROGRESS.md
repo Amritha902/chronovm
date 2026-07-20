@@ -50,7 +50,7 @@ and `wasm32`. The browser and terminal run the *same* VM and causal engine.
 
 ## Health
 
-- Tests: **34 passing** (21 unit + 13 integration)
+- Tests: **37 passing** (22 unit + 15 integration)
 - Clippy: **clean** · rustfmt: **clean**
 - Examples verified: factorial→120, fib→…, recursive→120, gcd→6, sum_to_n→55,
   power→1024, collatz→full sequence, countdown→5 4 3 2 1, array_sum→25,
@@ -60,6 +60,11 @@ and `wasm32`. The browser and terminal run the *same* VM and causal engine.
 
 ## Build log (newest first)
 
+- **Help overlay (web)** — press `?` for a controls modal (timeline keys + click
+  interactions).
+- **Breakpoints (web)** — click a source line to set one; run to next/prev
+  breakpoint; auto-play pauses on them. Plus a **TUI memory panel** for parity,
+  and **sieve** / **fib_memo** memory examples.
 - **Memory panel + array examples** — the web UI shows linear memory as a live
   cell grid (changed cells glow); "array sum" / "bubble sort" buttons added.
 - **Linear memory opcodes** — `mstore`/`mload` with provenance through memory;
