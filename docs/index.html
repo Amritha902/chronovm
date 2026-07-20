@@ -123,6 +123,12 @@
   /* causal */
   #causal { border-color: #6b3a26; display: none; }
   #causal.show { display: block; animation: rise .18s ease; }
+  #markBtn.on { background: var(--amber); color: var(--bg); border-color: var(--amber); text-shadow: none; }
+  #diff > .title { color: var(--p-bright); }
+  .drow { padding: 1px 4px; }
+  .drow .name { color: var(--amber); }
+  .drow .was { color: var(--p-faint); text-decoration: line-through; }
+  .drow .val { color: var(--p-bright); }
   @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
   #causal > .title { color: var(--amber); text-shadow: 0 0 6px rgba(255,198,77,.5); }
   .cnode { padding: 2px 6px; cursor: pointer; display: flex; gap: 10px; }
@@ -282,6 +288,7 @@
     <button id="toEnd">⏭</button>
     <button id="bpPrev" title="reverse to previous breakpoint">⇤bp</button>
     <button id="bpNext" title="continue to next breakpoint">bp⇥</button>
+    <button id="markBtn" title="mark this step, then scrub to diff another step against it">mark</button>
     <span class="counter">step <b id="stepNum">0</b> / <span id="stepMax">0</span> · <span id="statusText">—</span></span>
   </div>
   <div class="tl-track" id="tlTrack">
@@ -311,6 +318,7 @@
     <div class="panel" id="memory" style="display:none"><div class="title">memory</div><div class="body" id="memoryBody"></div></div>
     <div class="panel" id="output"><div class="title">output</div><div class="body" id="outputBody"></div></div>
     <div class="panel" id="causal"><div class="title" id="causalTitle">why?</div><div class="body" id="causalBody"></div></div>
+    <div class="panel" id="diff" style="display:none"><div class="title" id="diffTitle">diff</div><div class="body" id="diffBody"></div></div>
   </div>
 </div>
 
@@ -351,6 +359,7 @@ const EXAMPLES = {
 let session = null, program = null, frameCount = 0, cursor = 0;
 let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSource = '', causalSteps = [];
 const breakpoints = new Set();
+let markA = null;
 
 const $ = id => document.getElementById(id);
 
@@ -422,6 +431,7 @@ function record(src) {
   faultSteps = frameCount > 0 && session.frame(frameCount - 1).error ? [frameCount - 1] : [];
   clearSearch();
   hideCausal();
+  markA = null;
   renderMarks();
   setCursor(frameCount - 1); // park on the final frame, like the terminal UI
 }
@@ -434,6 +444,50 @@ function setCursor(i) {
   slider.style.setProperty('--fill', pct + '%');
   $('stepNum').textContent = cursor;
   renderFrame(session.frame(cursor));
+  renderDiff();
+}
+
+function scopeVars(f) {
+  const s = f.call_stack[f.call_stack.length - 1];
+  const o = {};
+  s.locals.forEach(v => { o[v.name] = v.value; });
+  return o;
+}
+
+function markStep() { markA = (markA === cursor) ? null : cursor; renderDiff(); }
+
+// Show what changed between the marked step A and the current step.
+function renderDiff() {
+  const panel = $('diff'), body = $('diffBody'), btn = $('markBtn');
+  if (markA === null) { btn.textContent = 'mark'; btn.classList.remove('on'); }
+  else { btn.textContent = 'A=' + markA; btn.classList.add('on'); }
+  if (markA === null || markA === cursor) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  const A = Math.min(markA, cursor), B = Math.max(markA, cursor);
+  const fa = session.frame(A), fb = session.frame(B);
+  $('diffTitle').textContent = `diff: step ${A} → ${B}`;
+  body.innerHTML = '';
+  const add = html => { const d = document.createElement('div'); d.className = 'drow'; d.innerHTML = html; body.appendChild(d); };
+  let any = false;
+  const va = scopeVars(fa), vb = scopeVars(fb);
+  [...new Set([...Object.keys(va), ...Object.keys(vb)])].sort().forEach(n => {
+    if (va[n] === vb[n]) return;
+    any = true;
+    const nm = escapeHtml(n);
+    if (va[n] === undefined) add(`<span class="name">${nm}</span> <span class="meta">(new)</span> = <span class="val">${vb[n]}</span>`);
+    else if (vb[n] === undefined) add(`<span class="name">${nm}</span> <span class="meta">removed</span>`);
+    else add(`<span class="name">${nm}</span>: <span class="was">${va[n]}</span> → <span class="val">${vb[n]}</span>`);
+  });
+  const ma = fa.memory || [], mb = fb.memory || [];
+  for (let i = 0; i < Math.max(ma.length, mb.length); i++) {
+    if (ma[i] !== mb[i]) { any = true; add(`<span class="name">mem[${i}]</span>: <span class="was">${ma[i] ?? 0}</span> → <span class="val">${mb[i] ?? 0}</span>`); }
+  }
+  if (fa.stack.length !== fb.stack.length) { any = true; add(`<span class="name">stack depth</span>: <span class="was">${fa.stack.length}</span> → <span class="val">${fb.stack.length}</span>`); }
+  if (fb.output.length !== fa.output.length) {
+    const added = fb.output.slice(fa.output.length).trim();
+    if (added) { any = true; add(`<span class="name">printed</span>: <span class="val">${escapeHtml(added.replace(/\n/g, ' '))}</span>`); }
+  }
+  if (!any) add('<span class="meta">no changes between these steps</span>');
 }
 
 function renderProgram() {
@@ -667,6 +721,7 @@ function wireControls() {
   $('stepFwd').onclick = () => { stopPlay(); setCursor(cursor + 1); };
   $('bpNext').onclick = () => continueToBp(1);
   $('bpPrev').onclick = () => continueToBp(-1);
+  $('markBtn').onclick = markStep;
   wireScrubTooltip();
   $('searchGo').onclick = runSearch;
   $('search').onkeydown = e => { if (e.key === 'Enter') runSearch(); };
