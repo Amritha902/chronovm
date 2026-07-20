@@ -63,6 +63,10 @@ pub struct Frame {
     /// Always contains at least the `main` scope.
     pub call_stack: Vec<Scope>,
 
+    /// Linear memory contents up to the current high-water mark (empty until a
+    /// program uses `mstore`). Lets the UI show an array mutating over time.
+    pub memory: Vec<i64>,
+
     /// Cumulative program output up to and including this step.
     pub output: String,
 
@@ -275,6 +279,7 @@ impl<'p> Machine<'p> {
             stack: self.stack.clone(),
             stack_origin: self.origin.clone(),
             call_stack: self.call_stack.clone(),
+            memory: self.mem.clone(),
             output: self.output.clone(),
             reads,
             wrote_var,

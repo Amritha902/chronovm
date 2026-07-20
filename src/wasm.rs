@@ -57,6 +57,8 @@ struct FrameView {
     stack: Vec<StackSlot>,
     /// Bottom (main) to top (current) — the same order as the terminal panel.
     call_stack: Vec<ScopeView>,
+    /// Linear memory contents (empty unless the program uses mstore/mload).
+    memory: Vec<i64>,
     output: String,
     error: Option<String>,
     halted: bool,
@@ -105,6 +107,7 @@ fn frame_view(f: &Frame) -> FrameView {
                     .collect(),
             })
             .collect(),
+        memory: f.memory.clone(),
         output: f.output.clone(),
         error: f.error.clone(),
         halted: f.halted,
