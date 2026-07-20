@@ -60,6 +60,11 @@ pub enum Instruction {
     /// caller. Any value left on the stack is the return value.
     Ret,
 
+    /// Store into linear memory: `( value addr -- )`, sets `mem[addr] = value`.
+    MStore,
+    /// Load from linear memory: `( addr -- value )`.
+    MLoad,
+
     /// Pop x and append it to the program output.
     Print,
     /// Stop execution.
@@ -93,6 +98,8 @@ impl Instruction {
             Instruction::Jnz(t) => format!("jnz @{t}"),
             Instruction::Call { name, .. } => format!("call {name}"),
             Instruction::Ret => "ret".into(),
+            Instruction::MStore => "mstore".into(),
+            Instruction::MLoad => "mload".into(),
             Instruction::Print => "print".into(),
             Instruction::Halt => "halt".into(),
         }

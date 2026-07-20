@@ -20,6 +20,10 @@ use crate::isa::{Instruction, Program};
 /// run away. Keeps a buggy `jmp` loop from eating all memory during recording.
 pub const STEP_LIMIT: usize = 2_000_000;
 
+/// Upper bound on addressable scratch memory cells (`mstore`/`mload`), to keep
+/// a bad address from triggering a huge allocation.
+pub const MAX_MEM: usize = 1 << 16;
+
 /// One activation record on the call stack. Each function call gets its own
 /// `Scope`, so a variable named `n` in a recursive call is independent of the
 /// caller's `n`. This is what makes the debugger's unwinding call-stack panel
@@ -213,6 +217,11 @@ struct Machine<'p> {
     step: usize,
     stack: Vec<i64>,
     origin: Vec<usize>,
+    /// Linear scratch memory addressed by `mstore`/`mload`, grown on demand.
+    mem: Vec<i64>,
+    /// Provenance for each memory cell (the step that last wrote it), so causal
+    /// queries flow through memory just like they flow through variables.
+    mem_origin: Vec<usize>,
     /// The call stack; always non-empty (the base scope is `main`).
     call_stack: Vec<Scope>,
     output: String,
@@ -230,6 +239,8 @@ impl<'p> Machine<'p> {
             step: 0,
             stack: Vec::new(),
             origin: Vec::new(),
+            mem: Vec::new(),
+            mem_origin: Vec::new(),
             call_stack: vec![Scope {
                 func: "main".into(),
                 return_ip: usize::MAX,
@@ -467,6 +478,42 @@ impl<'p> Machine<'p> {
                 }
             }
 
+            Instruction::MStore => {
+                // ( value addr -- ) : mem[addr] = value
+                if self.stack.len() < 2 {
+                    Some(underflow("mstore"))
+                } else {
+                    let (addr, o_addr) = self.pop().unwrap();
+                    let (val, o_val) = self.pop().unwrap();
+                    reads.push(o_val);
+                    reads.push(o_addr);
+                    match self.mem_index(addr) {
+                        Ok(i) => {
+                            self.mem[i] = val;
+                            self.mem_origin[i] = this_step;
+                            self.ip += 1;
+                            None
+                        }
+                        Err(e) => Some(e),
+                    }
+                }
+            }
+            Instruction::MLoad => match self.pop() {
+                // ( addr -- value ) ; provenance flows from the cell's writer
+                Some((addr, o_addr)) => match self.mem_index(addr) {
+                    Ok(i) => {
+                        let origin = self.mem_origin[i];
+                        reads.push(origin);
+                        reads.push(o_addr);
+                        self.push(self.mem[i], origin);
+                        self.ip += 1;
+                        None
+                    }
+                    Err(e) => Some(e),
+                },
+                None => Some(underflow("mload")),
+            },
+
             Instruction::Print => match self.pop() {
                 Some((v, o)) => {
                     reads.push(o);
@@ -495,6 +542,20 @@ impl<'p> Machine<'p> {
     fn push(&mut self, v: i64, origin: usize) {
         self.stack.push(v);
         self.origin.push(origin);
+    }
+
+    /// Validate a memory address and grow the backing store to cover it,
+    /// returning the usable index. Faults on a negative or out-of-range address.
+    fn mem_index(&mut self, addr: i64) -> Result<usize, String> {
+        if addr < 0 || addr as usize >= MAX_MEM {
+            return Err(format!("memory address {addr} out of range (0..{MAX_MEM})"));
+        }
+        let i = addr as usize;
+        if i >= self.mem.len() {
+            self.mem.resize(i + 1, 0);
+            self.mem_origin.resize(i + 1, 0);
+        }
+        Ok(i)
     }
 
     fn pop(&mut self) -> Option<(i64, usize)> {
@@ -593,6 +654,34 @@ mod tests {
         assert_eq!(t.faulted(), Some("integer overflow in add"));
         // History up to the fault is intact.
         assert!(t.frames.len() >= 3);
+    }
+
+    #[test]
+    fn memory_store_load_roundtrips() {
+        // mem[3] = 42, then load it back and print.
+        let t = trace_of("push 42\npush 3\nmstore\npush 3\nmload\nprint\nhalt\n");
+        assert_eq!(t.faulted(), None);
+        assert_eq!(t.frames[t.last()].output.trim(), "42");
+    }
+
+    #[test]
+    fn provenance_flows_through_memory() {
+        // x is loaded from a memory cell; "why x?" must reach the mstore.
+        let t = trace_of("push 7\npush 3\nmstore\npush 3\nmload\nstore x\nhalt\n");
+        let chain = t.explain_var(t.last(), "x");
+        let reached_mstore = chain
+            .iter()
+            .any(|n| matches!(t.frames[n.step].last_op, Some(Instruction::MStore)));
+        assert!(
+            reached_mstore,
+            "causal chain should thread through memory: {chain:?}"
+        );
+    }
+
+    #[test]
+    fn bad_memory_address_faults() {
+        let t = trace_of("push 1\npush -5\nmstore\nhalt\n");
+        assert!(t.faulted().unwrap().contains("out of range"));
     }
 
     #[test]

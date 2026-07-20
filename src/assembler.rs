@@ -185,6 +185,8 @@ fn parse_instruction(
             name: arg.unwrap().to_string(),
         },
         "ret" => Instruction::Ret,
+        "mstore" => Instruction::MStore,
+        "mload" => Instruction::MLoad,
         "print" => Instruction::Print,
         "halt" => Instruction::Halt,
         other => return Err(err(format!("unknown instruction `{other}`"))),

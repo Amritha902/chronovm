@@ -1,0 +1,47 @@
+; Sum an array held in linear memory — demonstrates mstore / mload.
+;
+; Writes [5, 2, 8, 1, 9] into mem[0..5], then loops summing them. Prints 25.
+; Scrub it to watch the same load/store instructions revisit different cells,
+; and ask "why is sum == 25?" to trace the adds back through memory.
+
+; --- write the array: (value addr -- ) ---
+    push 5
+    push 0
+    mstore
+    push 2
+    push 1
+    mstore
+    push 8
+    push 2
+    mstore
+    push 1
+    push 3
+    mstore
+    push 9
+    push 4
+    mstore
+
+; --- sum mem[0..5] ---
+    push 0
+    store sum
+    push 0
+    store i
+loop:
+    load i
+    push 5
+    lt
+    jz done
+    load sum
+    load i
+    mload            ; push mem[i]
+    add
+    store sum
+    load i
+    push 1
+    add
+    store i
+    jmp loop
+done:
+    load sum
+    print            ; 25
+    halt
