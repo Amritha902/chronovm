@@ -129,6 +129,14 @@
   .drow .name { color: var(--amber); }
   .drow .was { color: var(--p-faint); text-decoration: line-through; }
   .drow .val { color: var(--p-bright); }
+  #watchInput { min-width: 0; width: 100%; margin-bottom: 8px; }
+  .watchrow { margin-bottom: 8px; }
+  .watchhead { cursor: pointer; }
+  .watchhead .name { color: var(--amber); }
+  .watchhead .rm { color: var(--p-faint); }
+  .watchhead:hover .rm { color: var(--fault); }
+  .spark { letter-spacing: 0; line-height: 1; color: var(--p); white-space: nowrap; overflow-x: auto; }
+  .spark .cursorcol { color: var(--amber); background: rgba(255,198,77,.18); }
   @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
   #causal > .title { color: var(--amber); text-shadow: 0 0 6px rgba(255,198,77,.5); }
   .cnode { padding: 2px 6px; cursor: pointer; display: flex; gap: 10px; }
@@ -321,6 +329,10 @@
     <div class="panel" id="output"><div class="title">output</div><div class="body" id="outputBody"></div></div>
     <div class="panel" id="causal"><div class="title" id="causalTitle">why?</div><div class="body" id="causalBody"></div></div>
     <div class="panel" id="diff" style="display:none"><div class="title" id="diffTitle">diff</div><div class="body" id="diffBody"></div></div>
+    <div class="panel" id="watch"><div class="title">watch</div><div class="body">
+      <input type="text" id="watchInput" placeholder="watch a variable over time…  e.g. acc" />
+      <div id="watchList"></div>
+    </div></div>
   </div>
 </div>
 
@@ -362,6 +374,7 @@ let session = null, program = null, frameCount = 0, cursor = 0;
 let matches = [], matchIdx = -1, playTimer = null, faultSteps = [], currentSource = '', causalSteps = [];
 const breakpoints = new Set();
 let markA = null;
+const watches = [];
 
 const $ = id => document.getElementById(id);
 
@@ -434,6 +447,8 @@ function record(src) {
   clearSearch();
   hideCausal();
   markA = null;
+  watches.length = 0;
+  renderWatches();
   renderMarks();
   setCursor(frameCount - 1); // park on the final frame, like the terminal UI
 }
@@ -447,6 +462,7 @@ function setCursor(i) {
   $('stepNum').textContent = cursor;
   renderFrame(session.frame(cursor));
   renderDiff();
+  renderWatches();
 }
 
 function scopeVars(f) {
@@ -457,6 +473,61 @@ function scopeVars(f) {
 }
 
 function markStep() { markA = (markA === cursor) ? null : cursor; renderDiff(); }
+
+// --- watch expressions: a variable's whole history as a sparkline ---
+function valueAt(frameIdx, name) {
+  const f = session.frame(frameIdx);
+  for (let s = f.call_stack.length - 1; s >= 0; s--) {
+    const hit = f.call_stack[s].locals.find(v => v.name === name);
+    if (hit) return hit.value;
+  }
+  return null;
+}
+function addWatch(name) {
+  name = name.trim();
+  if (!name || watches.some(w => w.name === name)) return;
+  const values = [];
+  for (let i = 0; i < frameCount; i++) values.push(valueAt(i, name));
+  watches.push({ name, values });
+  renderWatches();
+}
+function removeWatch(name) {
+  const i = watches.findIndex(w => w.name === name);
+  if (i >= 0) { watches.splice(i, 1); renderWatches(); }
+}
+function renderWatches() {
+  const list = $('watchList');
+  list.innerHTML = '';
+  const width = Math.max(1, Math.min(56, frameCount));
+  const cursorCol = frameCount > 1 ? Math.round((cursor / (frameCount - 1)) * (width - 1)) : 0;
+  const bars = '▁▂▃▄▅▆▇█';
+  watches.forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'watchrow';
+    const cur = w.values[cursor];
+    const head = document.createElement('div');
+    head.className = 'watchhead';
+    head.title = 'click to remove';
+    head.innerHTML = `<span class="name">${escapeHtml(w.name)}</span> = <span class="val">${cur === null ? '—' : cur}</span> <span class="rm">✕</span>`;
+    head.onclick = () => removeWatch(w.name);
+    const defined = w.values.filter(v => v !== null);
+    const min = defined.length ? Math.min(...defined) : 0;
+    const max = defined.length ? Math.max(...defined) : 0;
+    const spark = document.createElement('div');
+    spark.className = 'spark';
+    for (let c = 0; c < width; c++) {
+      const idx = frameCount > 1 ? Math.floor((c / (width - 1 || 1)) * (frameCount - 1)) : 0;
+      const v = w.values[idx];
+      const s = document.createElement('span');
+      s.textContent = v === null ? '·' : bars[Math.round((max === min ? 0.5 : (v - min) / (max - min)) * (bars.length - 1))];
+      if (c === cursorCol) s.className = 'cursorcol';
+      spark.appendChild(s);
+    }
+    row.appendChild(head);
+    row.appendChild(spark);
+    list.appendChild(row);
+  });
+}
 
 // Step over a call: advance to the next step at the same (or shallower) call
 // depth, skipping any frames spent inside a called function.
@@ -746,6 +817,7 @@ function wireControls() {
   $('bpNext').onclick = () => continueToBp(1);
   $('bpPrev').onclick = () => continueToBp(-1);
   $('markBtn').onclick = markStep;
+  $('watchInput').onkeydown = e => { if (e.key === 'Enter') { addWatch(e.target.value); e.target.value = ''; } };
   wireScrubTooltip();
   $('searchGo').onclick = runSearch;
   $('search').onkeydown = e => { if (e.key === 'Enter') runSearch(); };
