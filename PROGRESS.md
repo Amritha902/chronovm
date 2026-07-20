@@ -60,6 +60,10 @@ and `wasm32`. The browser and terminal run the *same* VM and causal engine.
 
 ## Build log (newest first)
 
+- **Watch sparklines (web)** — watch a variable and see its whole value history
+  as a sparkline with the current step marked.
+- **Step-over / step-out (web)** and **diff between two steps** (mark A, scrub,
+  see what changed in vars/memory/stack/output).
 - **Help overlay (web)** — press `?` for a controls modal (timeline keys + click
   interactions).
 - **Breakpoints (web)** — click a source line to set one; run to next/prev
