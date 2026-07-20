@@ -50,15 +50,25 @@ and `wasm32`. The browser and terminal run the *same* VM and causal engine.
 
 ## Health
 
-- Tests: **18 passing**
-- Clippy: **clean**
-- Examples verified: factorial→120, fib→0 1 1 2 3 5 8 13 21 34, recursive→120
+- Tests: **27 passing** (18 unit + 9 integration)
+- Clippy: **clean** · rustfmt: **clean**
+- Examples verified: factorial→120, fib→0 1 1 2 3 5 8 13 21 34, recursive→120,
+  gcd→6, sum_to_n→55, power→1024, collatz→full sequence, countdown→5 4 3 2 1
 - Live demo: up
+- CI config written (in `ci/ci.yml`; owner activates — see NIGHT_PLAN "Needs owner")
 
 ## Build log (newest first)
 
+- **share-URL** — a "share" button encodes the running program into the link
+  (`#p=…`); opening a shared link reproduces it.
+- **Docs blitz (parallel agents)** — README overhaul, ARCHITECTURE.md,
+  LANGUAGE.md, DEMO.md, PITCH.md, CHANGELOG.md, CI config, rustfmt + `cargo fmt`.
+- **Example gallery** — gcd, sum_to_n, power, collatz, countdown + README, all
+  hand-verified, plus a 9-test integration suite locking their outputs.
 - **CRT deepening** — screen bezel/curvature, phosphor-persistence flash on
   each step, slow refresh sweep, typewriter boot, mobile polish.
+- **Timeline markers** (overnight cron) — fault + search-match ticks on the
+  scrubber.
 - **CRT phosphor redesign** — replaced the generic dark-gradient look with a
   monochrome-green terminal aesthetic.
 - **WASM browser build** — VM core compiled to wasm; browser debugger; live on
