@@ -146,6 +146,33 @@
   .watchhead:hover .rm { color: var(--fault); }
   .spark { letter-spacing: 0; line-height: 1; color: var(--p); white-space: nowrap; overflow-x: auto; }
   .spark .cursorcol { color: var(--amber); background: rgba(255,198,77,.18); }
+
+  /* ---- talk to chronovm: voice + text console ---- */
+  #voiceFab { position: fixed; right: 20px; bottom: 20px; z-index: 70; width: 56px; height: 56px;
+    border: 1px solid var(--p); border-radius: 50%; background: var(--bg); color: var(--p);
+    font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 20px rgba(61,255,136,.22); }
+  #voiceFab:hover { background: var(--p); color: var(--bg); text-shadow: none; }
+  #voiceFab.listening { border-color: var(--amber); color: var(--amber); animation: micpulse 1.2s infinite; }
+  @keyframes micpulse { 0% { box-shadow: 0 0 0 0 rgba(255,198,77,.55); }
+    70% { box-shadow: 0 0 0 16px rgba(255,198,77,0); } 100% { box-shadow: 0 0 0 0 rgba(255,198,77,0); } }
+  #voice { position: fixed; right: 20px; bottom: 88px; z-index: 70; display: none;
+    width: min(430px, calc(100vw - 40px)); border: 1px solid var(--p);
+    background: var(--bg); box-shadow: 0 0 34px rgba(0,0,0,.65), 0 0 20px rgba(61,255,136,.10); }
+  #voice.show { display: block; animation: rise .18s ease; }
+  #voice .vhead { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    border-bottom: 1px solid var(--p-faint); color: var(--p-bright);
+    font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; }
+  #voice .vhead .spacer { margin-left: auto; }
+  #voice .vhead button { padding: 2px 8px; font-size: 12px; }
+  #vlog { max-height: 300px; overflow-y: auto; padding: 10px 12px; }
+  .vmsg { margin-bottom: 9px; }
+  .vmsg .who { color: var(--p-faint); font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; }
+  .vmsg.you .txt { color: var(--amber); }
+  .vmsg.vm .txt { color: var(--p-bright); }
+  #vstatus { color: var(--p-dim); font-size: 11px; padding: 0 12px 6px; min-height: 14px; }
+  #vform { display: flex; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--p-faint); }
+  #vinput { flex: 1; min-width: 0; }
   @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
   #causal > .title { color: var(--amber); text-shadow: 0 0 6px rgba(255,198,77,.5); }
   .cnode { padding: 2px 6px; cursor: pointer; display: flex; gap: 10px; transition: background .12s ease; }
@@ -401,6 +428,22 @@
   Click a <span style="color:var(--fault)">source line</span> to set a breakpoint, then use <kbd>bp⇥</kbd>/<kbd>⇤bp</kbd> to run to it.
   Keys: <kbd>←</kbd> <kbd>→</kbd> step · <kbd>space</kbd> play · <kbd>/</kbd> search.
 </p>
+
+<button id="voiceFab" title="talk to chronovm — ask why a value is what it is">🎙</button>
+<div id="voice">
+  <div class="vhead">
+    <span>talk to chronovm</span>
+    <span class="spacer"></span>
+    <button id="vmute" title="mute spoken replies">🔊</button>
+    <button id="vclose" title="close">✕</button>
+  </div>
+  <div id="vlog"></div>
+  <div id="vstatus"></div>
+  <form id="vform" autocomplete="off">
+    <input type="text" id="vinput" placeholder="why is acc 120?  ·  why did it crash?" />
+    <button type="submit">ask</button>
+  </form>
+</div>
 
 <script type="module">
 import init, { Session } from './pkg/chronovm.js';
@@ -1043,6 +1086,226 @@ function toggleHelp(force) {
 }
 
 function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+/* ============================================================================
+   Talk to chronovm — a conversational console for the recorded trace.
+
+   Speech in (Web Speech API) and speech out (speechSynthesis), with a text
+   input fallback so it works in every browser. The "brain" is entirely local:
+   it maps what you say onto the real causal engine and the recorded trace, so
+   it needs no backend and no API key. Ask "why is acc 120?" and it runs the
+   provenance query and explains the causality out loud.
+   ========================================================================== */
+let vRecog = null, vListening = false, vMuted = false, vGreeted = false;
+
+const vSpeakable = s => String(s).replace(/⇒/g, 'produced').replace(/_/g, ' ');
+
+function vLog(who, text) {
+  const log = $('vlog');
+  const d = document.createElement('div');
+  d.className = 'vmsg ' + who;
+  d.innerHTML = `<div class="who">${who === 'you' ? 'you' : 'chronovm'}</div>` +
+    `<div class="txt">${escapeHtml(text)}</div>`;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+function vStatus(t) { $('vstatus').textContent = t || ''; }
+function vSpeak(text) {
+  if (vMuted || !window.speechSynthesis) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    speechSynthesis.speak(u);
+  } catch (e) { /* speech is a nicety; never let it break the app */ }
+}
+
+/** Resolve a spoken token to a real variable name (speech mangles short names). */
+function vResolveVar(tok) {
+  if (!tok || !session) return null;
+  const names = [];
+  session.frame(cursor).call_stack.forEach(s =>
+    s.locals.forEach(v => { if (!names.includes(v.name)) names.push(v.name); }));
+  const t = tok.toLowerCase();
+  return names.find(n => n.toLowerCase() === t)
+    || names.find(n => n.toLowerCase().startsWith(t) || t.startsWith(n.toLowerCase()))
+    || null;
+}
+
+/** Turn a causal chain into a spoken sentence. */
+function vChain(chain, lead) {
+  if (!chain || !chain.length) return `${lead} I couldn't trace a cause for that.`;
+  return `${lead} ` + chain.slice(0, 4)
+    .map(n => `step ${n.step}, ${vSpeakable(n.description)}`).join('; then ') + '.';
+}
+
+/** The local brain: map a question onto the trace. Returns a spoken answer. */
+function vAnswer(raw) {
+  const q = String(raw).toLowerCase().trim();
+  if (!session) return 'No program is loaded yet.';
+  let m;
+
+  if (/^(help|hi|hey|hello|what can (i|you)|commands?)\b/.test(q))
+    return 'Ask me: why is acc 120 · why did it crash · go to step 40 · what is on the stack · ' +
+      'what does this program do · what is in memory · deepest recursion · play, pause, start, end.';
+
+  // "why did it crash?" — seeded from the faulting step's causal chain
+  if (/(crash|crashed|fault|faulted|error|go wrong|went wrong|fail)/.test(q)) {
+    if (!faultSteps.length) return "This run didn't fault — it finished cleanly.";
+    const fs = faultSteps[0];
+    setCursor(fs);
+    const err = session.frame(fs).error || 'a fault';
+    let chain = [];
+    try { chain = session.explainStep(fs); } catch (e) { /* fall through */ }
+    return vChain(chain, `It crashed at step ${fs} with ${err}. Here is what led there:`);
+  }
+
+  // "why is X ...?" — the flagship causal query
+  m = q.match(/why\s+(?:is|was|does|did|the)?\s*([a-z_][a-z0-9_]*)/);
+  if (m) {
+    const name = vResolveVar(m[1]);
+    if (!name) return `I can't find a variable called ${m[1]} at this step.`;
+    const val = currentLocal(name);
+    explain(name); // drives the UI: causal panel, provenance arrows, and the jump
+    let chain = [];
+    try { chain = session.explainVar(cursor, name); } catch (e) { /* fall through */ }
+    return vChain(chain, `${name} is ${val}. Here is why:`);
+  }
+
+  m = q.match(/(?:go to|jump to|goto|show me)\s*(?:step\s*)?(\d+)/) || q.match(/^step\s+(\d+)/);
+  if (m) {
+    const n = Math.max(0, Math.min(frameCount - 1, parseInt(m[1], 10)));
+    setCursor(n);
+    return `Step ${n}. ${vSpeakable(stepSummary(n))}`;
+  }
+
+  if (/^(play|run it|keep going)\b/.test(q)) { startPlay(); return 'Playing.'; }
+  if (/^(pause|stop|halt)\b/.test(q)) { stopPlay(); return 'Paused.'; }
+  if (/(beginning|the start|step zero|restart)/.test(q)) { setCursor(0); return 'Back to the beginning.'; }
+  if (/(the end|final step|last step|finish)/.test(q)) { setCursor(frameCount - 1); return 'At the last step.'; }
+
+  m = q.match(/(forward|ahead|next|back|backward|rewind|previous)\s*(\d+)?/);
+  if (m) {
+    const n = parseInt(m[2] || '1', 10);
+    const dir = /back|rewind|previous/.test(m[1]) ? -1 : 1;
+    setCursor(cursor + dir * n);
+    return `Step ${cursor}. ${vSpeakable(stepSummary(cursor))}`;
+  }
+
+  if (/call ?stack|who called|where am i/.test(q)) {
+    const cs = session.frame(cursor).call_stack.map(s => s.func).reverse();
+    return `You are in ${cs[0]}, at depth ${cs.length}` +
+      (cs.length > 1 ? `, called from ${cs.slice(1).join(', ')}.` : ' — the top level.');
+  }
+  if (/\bstack\b/.test(q)) {
+    const st = session.frame(cursor).stack;
+    if (!st.length) return 'The stack is empty at this step.';
+    const vals = st.slice().reverse().map(s => s.value);
+    return `The stack holds ${vals.length} value${vals.length > 1 ? 's' : ''}: ${vals.join(', ')}, top first.`;
+  }
+  if (/\bmemory\b|\barray\b|\bcells?\b/.test(q)) {
+    const mem = session.frame(cursor).memory || [];
+    if (!mem.length) return "This program hasn't written to memory.";
+    return `Memory holds ${mem.length} cells: ${mem.slice(0, 12).join(', ')}` +
+      (mem.length > 12 ? ', and more.' : '.');
+  }
+  if (/deep(est)? recursion|deepest|max depth/.test(q)) {
+    let best = 0, at = 0;
+    for (let i = 0; i < frameCount; i++) {
+      const d = session.frame(i).call_stack.length;
+      if (d > best) { best = d; at = i; }
+    }
+    setCursor(at);
+    return `The deepest recursion is ${best} frames, at step ${at}.`;
+  }
+  if (/(what|which).*(program|code)|explain the program|summar/.test(q)) {
+    const n = program.instructions.length;
+    const labels = program.instructions.flatMap(i => i.labels);
+    const out = (session.frame(frameCount - 1).output || '').trim().split('\n').filter(Boolean);
+    return `This program is ${n} instructions` +
+      (labels.length ? `, with labels ${labels.slice(0, 4).join(', ')}` : '') +
+      `. It ran ${frameCount - 1} steps and printed ${out.length ? out.join(', ') : 'nothing'}.`;
+  }
+  if (/output|print|result|answer/.test(q)) {
+    const out = (session.frame(frameCount - 1).output || '').trim().split('\n').filter(Boolean);
+    return out.length ? `The program printed ${out.join(', ')}.` : "The program didn't print anything.";
+  }
+
+  const EX = { 'bubble sort': 'bubble_sort', 'array sum': 'array_sum', 'recursive': 'recursive',
+    'factorial': 'factorial', 'fibonacci': 'fib', 'fib': 'fib', 'buggy': 'buggy', 'crash': 'buggy' };
+  if (/^(load|open|run|show me)\b/.test(q)) {
+    for (const k of Object.keys(EX)) {
+      if (q.includes(k) && EXAMPLES[EX[k]]) {
+        $('src').value = EXAMPLES[EX[k]];
+        record(EXAMPLES[EX[k]]);
+        return `Loaded ${k}.`;
+      }
+    }
+  }
+
+  m = q.match(/(?:what(?:'s| is| are)|value of)\s+(?:the\s+)?([a-z_][a-z0-9_]*)/);
+  if (m) {
+    const name = vResolveVar(m[1]);
+    if (name) {
+      const v = currentLocal(name);
+      return `${name} is ${v === null ? 'not set at this step' : v}.`;
+    }
+  }
+
+  return "I didn't catch that. Try: why is acc 120 · why did it crash · go to step 40 · " +
+    "what is on the stack · or say help.";
+}
+
+function vAsk(text) {
+  if (!text || !text.trim()) return;
+  vLog('you', text);
+  let reply;
+  try { reply = vAnswer(text); }
+  catch (e) { reply = 'Something went wrong answering that.'; }
+  vLog('vm', reply);
+  vSpeak(reply);
+}
+
+function vInitRecog() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1; r.continuous = false;
+  r.onresult = e => vAsk(e.results[0][0].transcript);
+  r.onerror = e => { vStatus(e.error === 'not-allowed' ? 'microphone blocked — type instead' : `mic: ${e.error}`); };
+  r.onend = () => { vListening = false; $('voiceFab').classList.remove('listening'); vStatus(''); };
+  return r;
+}
+function vListen() {
+  if (!vRecog) { vStatus('speech input unsupported here — type your question'); return; }
+  if (vListening) { try { vRecog.stop(); } catch (e) {} return; }
+  try { vRecog.start(); vListening = true; $('voiceFab').classList.add('listening'); vStatus('listening…'); }
+  catch (e) { vStatus('could not start the mic'); }
+}
+function vOpen(show) {
+  $('voice').classList.toggle('show', show);
+  if (show && !vGreeted) {
+    vGreeted = true;
+    const hi = 'Ask me about this run — try "why is result 120?" or "why did it crash?"';
+    vLog('vm', hi);
+    if (!vRecog) vStatus('speech input unsupported here — type your question');
+  }
+}
+function vWire() {
+  vRecog = vInitRecog();
+  $('voiceFab').onclick = () => {
+    const open = $('voice').classList.contains('show');
+    if (!open) { vOpen(true); vListen(); } else { vListen(); }
+  };
+  $('vclose').onclick = () => { vOpen(false); if (vListening) try { vRecog.stop(); } catch (e) {} };
+  $('vmute').onclick = () => {
+    vMuted = !vMuted;
+    $('vmute').textContent = vMuted ? '🔇' : '🔊';
+    if (vMuted && window.speechSynthesis) speechSynthesis.cancel();
+  };
+  $('vform').onsubmit = e => { e.preventDefault(); vAsk($('vinput').value); $('vinput').value = ''; };
+}
+vWire();
 
 main();
 </script>

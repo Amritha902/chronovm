@@ -172,6 +172,22 @@ impl Session {
         to_js(&chain)
     }
 
+    /// The causal chain for whatever a given step consumed — the engine behind
+    /// "why did it crash?", seeded from the faulting step.
+    #[wasm_bindgen(js_name = explainStep)]
+    pub fn explain_step(&self, step: usize) -> Result<JsValue, JsError> {
+        let chain: Vec<CausalNodeView> = self
+            .trace
+            .explain_step(step, 32)
+            .into_iter()
+            .map(|n| CausalNodeView {
+                step: n.step,
+                description: n.description,
+            })
+            .collect();
+        to_js(&chain)
+    }
+
     /// Every step where a search condition holds. Throws on a malformed query.
     pub fn search(&self, q: &str) -> Result<JsValue, JsError> {
         let pred = query::parse(q).map_err(|e| JsError::new(&e))?;

@@ -159,7 +159,7 @@ impl Trace {
             if chain.len() >= budget || !seen.insert(step) {
                 continue;
             }
-            let f = &self.frames[step];
+            let Some(f) = self.frames.get(step) else { continue };
             chain.push(CausalNode {
                 step,
                 description: self.describe(f),

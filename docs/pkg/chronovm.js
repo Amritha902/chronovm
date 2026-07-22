@@ -14,6 +14,19 @@ export class Session {
         wasm.__wbg_session_free(ptr, 0);
     }
     /**
+     * The causal chain for whatever a given step consumed — the engine behind
+     * "why did it crash?", seeded from the faulting step.
+     * @param {number} step
+     * @returns {any}
+     */
+    explainStep(step) {
+        const ret = wasm.session_explainStep(this.__wbg_ptr, step);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * The causal chain explaining variable `var` as of frame `i`.
      * @param {number} i
      * @param {string} _var

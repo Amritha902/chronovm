@@ -67,6 +67,28 @@ The [live demo](https://amritha902.github.io/chronovm/) is the same recorded tra
 
 Browser keys: `←`/`→` step · `space` play/pause · `/` focus search · `?` help.
 
+## 🎙 Talk to it — a debugger you can hold a conversation with
+
+Click the mic (bottom-right) and **ask the debugger about your program out loud**.
+It answers in voice *and* text, and drives the UI while it does:
+
+> **“why is result 120?”** → *“result is 120. Here is why: step 74, store result;
+> then step 70, mul produced 120…”* — and it opens the causal panel, draws the
+> provenance arrows, and jumps you to the cause.
+>
+> **“why did it crash?”** → jumps to the faulting step and traces the bad operand
+> back to where it came from.
+
+Other things it understands: `what's on the stack` · `what's in memory` ·
+`go to step 40` · `where am I` · `deepest recursion` · `what does this program do` ·
+`what did it print` · `play` / `pause` / `start` / `end` · `load bubble sort` · `help`.
+
+**No API key and no backend.** The "brain" is local: it maps what you say onto the
+real causal engine and the recorded trace, so it works offline on the static site.
+Speech uses the browser's built-in Web Speech API; if your browser doesn't support
+speech input (e.g. Firefox), the console gracefully falls back to typing — and
+still speaks its answers back. Use the 🔊 button to mute replies.
+
 ## Quick start (terminal)
 
 ```sh
