@@ -80,7 +80,7 @@ fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsError> {
     serde_wasm_bindgen::to_value(value).map_err(|e| JsError::new(&e.to_string()))
 }
 
-fn frame_view(f: &Frame) -> FrameView {
+fn frame_view(f: &Frame, output: &str) -> FrameView {
     FrameView {
         ip: f.ip,
         last_ip: f.last_ip,
@@ -107,8 +107,8 @@ fn frame_view(f: &Frame) -> FrameView {
                     .collect(),
             })
             .collect(),
-        memory: f.memory.clone(),
-        output: f.output.clone(),
+        memory: f.memory.as_ref().clone(),
+        output: output.to_string(),
         error: f.error.clone(),
         halted: f.halted,
         wrote_var: f.wrote_var.clone(),
@@ -154,7 +154,7 @@ impl Session {
             .frames
             .get(i)
             .ok_or_else(|| JsError::new("frame index out of range"))?;
-        to_js(&frame_view(f))
+        to_js(&frame_view(f, self.trace.output_at(i)))
     }
 
     /// The causal chain explaining variable `var` as of frame `i`.

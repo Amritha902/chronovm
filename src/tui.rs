@@ -606,7 +606,7 @@ fn render_callstack(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_output(f: &mut Frame, app: &App, area: Rect) {
     let frame = &app.trace.frames[app.cursor];
-    let mut text = frame.output.clone();
+    let mut text = app.trace.output_at(app.cursor).to_string();
     if let Some(err) = &frame.error {
         text.push_str(&format!("\n⚠ fault: {err}"));
     }

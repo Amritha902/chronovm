@@ -17,7 +17,10 @@ fn run(name: &str, src: &str) -> (String, Option<String>) {
     let program = assemble(src).unwrap_or_else(|e| panic!("{name} failed to assemble: {e}"));
     let trace = record(program);
     let last = &trace.frames[trace.last()];
-    (last.output.trim().to_string(), last.error.clone())
+    (
+        trace.output_at(trace.last()).trim().to_string(),
+        last.error.clone(),
+    )
 }
 
 /// The printed lines of a program, re-joined with single spaces. Handy for the

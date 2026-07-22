@@ -13,6 +13,7 @@
 //! feature.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use crate::isa::{Instruction, Program};
 
@@ -64,11 +65,15 @@ pub struct Frame {
     pub call_stack: Vec<Scope>,
 
     /// Linear memory contents up to the current high-water mark (empty until a
-    /// program uses `mstore`). Lets the UI show an array mutating over time.
-    pub memory: Vec<i64>,
+    /// program uses `mstore`). Shared copy-on-write: consecutive steps that do
+    /// not touch memory all point at the same allocation, so recording costs
+    /// one clone per *write* rather than one per *step*.
+    pub memory: Rc<Vec<i64>>,
 
-    /// Cumulative program output up to and including this step.
-    pub output: String,
+    /// How many bytes of the run's cumulative output existed at this step. The
+    /// output text itself lives once on the [`Trace`] — storing the whole string
+    /// per frame made recording O(steps²). Use [`Trace::output_at`].
+    pub output_len: usize,
 
     /// The steps whose produced values this instruction consumed. This is the
     /// backbone of causal queries.
@@ -103,12 +108,22 @@ impl Frame {
 pub struct Trace {
     pub program: Program,
     pub frames: Vec<Frame>,
+    /// The run's complete output, stored once. Each frame records only how much
+    /// of it existed at that step (see [`Frame::output_len`]).
+    pub output: String,
 }
 
 impl Trace {
     /// The last frame index (there is always at least the initial frame).
     pub fn last(&self) -> usize {
         self.frames.len() - 1
+    }
+
+    /// The cumulative output as of frame `i` — an O(1) slice of the shared
+    /// buffer rather than a per-frame copy.
+    pub fn output_at(&self, i: usize) -> &str {
+        let len = self.frames.get(i).map_or(0, |f| f.output_len);
+        self.output.get(..len).unwrap_or(&self.output)
     }
 
     /// Did the program end in an error?
@@ -216,7 +231,12 @@ pub fn record(program: Program) -> Trace {
         }
     }
 
-    Trace { program, frames }
+    let output = std::mem::take(&mut m.output);
+    Trace {
+        program,
+        frames,
+        output,
+    }
 }
 
 /// The mutable execution state. Not exposed outside this module — callers only
@@ -232,6 +252,9 @@ struct Machine<'p> {
     /// Provenance for each memory cell (the step that last wrote it), so causal
     /// queries flow through memory just like they flow through variables.
     mem_origin: Vec<usize>,
+    /// Shared snapshot of `mem` handed to frames, rebuilt only when `mem_dirty`.
+    mem_cache: Rc<Vec<i64>>,
+    mem_dirty: bool,
     /// The call stack; always non-empty (the base scope is `main`).
     call_stack: Vec<Scope>,
     output: String,
@@ -251,6 +274,8 @@ impl<'p> Machine<'p> {
             origin: Vec::new(),
             mem: Vec::new(),
             mem_origin: Vec::new(),
+            mem_cache: Rc::new(Vec::new()),
+            mem_dirty: false,
             call_stack: vec![Scope {
                 func: "main".into(),
                 return_ip: usize::MAX,
@@ -269,15 +294,25 @@ impl<'p> Machine<'p> {
         self.call_stack.last_mut().expect("call stack never empty")
     }
 
+    /// The shared memory snapshot, re-materialised only after a write.
+    fn memory_rc(&mut self) -> Rc<Vec<i64>> {
+        if self.mem_dirty {
+            self.mem_cache = Rc::new(self.mem.clone());
+            self.mem_dirty = false;
+        }
+        Rc::clone(&self.mem_cache)
+    }
+
     /// Capture the current state as an immutable frame.
     fn snapshot(
-        &self,
+        &mut self,
         last_op: Option<Instruction>,
         last_ip: Option<usize>,
         reads: Vec<usize>,
         wrote_var: Option<String>,
         error: Option<String>,
     ) -> Frame {
+        let memory = self.memory_rc();
         Frame {
             ip: self.ip,
             last_op,
@@ -285,8 +320,8 @@ impl<'p> Machine<'p> {
             stack: self.stack.clone(),
             stack_origin: self.origin.clone(),
             call_stack: self.call_stack.clone(),
-            memory: self.mem.clone(),
-            output: self.output.clone(),
+            memory,
+            output_len: self.output.len(),
             reads,
             wrote_var,
             error,
@@ -502,6 +537,7 @@ impl<'p> Machine<'p> {
                         Ok(i) => {
                             self.mem[i] = val;
                             self.mem_origin[i] = this_step;
+                            self.mem_dirty = true;
                             self.ip += 1;
                             None
                         }
@@ -567,6 +603,7 @@ impl<'p> Machine<'p> {
         if i >= self.mem.len() {
             self.mem.resize(i + 1, 0);
             self.mem_origin.resize(i + 1, 0);
+            self.mem_dirty = true;
         }
         Ok(i)
     }
@@ -670,11 +707,44 @@ mod tests {
     }
 
     #[test]
+    fn output_is_one_shared_buffer_with_per_frame_lengths() {
+        // Recording used to clone the whole cumulative output into every frame,
+        // making a print loop O(steps²). Now each frame stores only a length.
+        let t = trace_of("push 1\nprint\npush 2\nprint\npush 3\nprint\nhalt\n");
+        assert_eq!(t.output.trim(), "1\n2\n3");
+        let mut prev = 0;
+        for i in 0..=t.last() {
+            let seen = t.output_at(i);
+            assert!(seen.len() >= prev, "a frame's output must never shrink");
+            assert!(t.output.starts_with(seen), "each frame sees a prefix");
+            prev = seen.len();
+        }
+        assert_eq!(t.output_at(t.last()).trim(), "1\n2\n3");
+        assert_eq!(t.output_at(0), "");
+    }
+
+    #[test]
+    fn memory_is_shared_between_steps_that_do_not_write() {
+        // Copy-on-write: only `mstore` should allocate a new memory snapshot, so
+        // consecutive non-writing steps must point at the *same* allocation.
+        let t = trace_of("push 7\npush 0\nmstore\npush 1\npush 2\npush 3\npop\nhalt\n");
+        let shared = (1..t.last())
+            .filter(|&i| Rc::ptr_eq(&t.frames[i].memory, &t.frames[i + 1].memory))
+            .count();
+        assert!(
+            shared > 0,
+            "steps that don't touch memory should share one allocation"
+        );
+        // The written value is still visible after the store.
+        assert_eq!(t.frames[t.last()].memory.first(), Some(&7));
+    }
+
+    #[test]
     fn memory_store_load_roundtrips() {
         // mem[3] = 42, then load it back and print.
         let t = trace_of("push 42\npush 3\nmstore\npush 3\nmload\nprint\nhalt\n");
         assert_eq!(t.faulted(), None);
-        assert_eq!(t.frames[t.last()].output.trim(), "42");
+        assert_eq!(t.output_at(t.last()).trim(), "42");
     }
 
     #[test]
@@ -739,7 +809,7 @@ mod tests {
         let t = trace_of(src);
         assert_eq!(t.faulted(), None);
         // 4! == 24
-        assert_eq!(t.frames[t.last()].output.trim(), "24");
+        assert_eq!(t.output_at(t.last()).trim(), "24");
         // The call stack must have grown past depth 1 at some point.
         let max_depth = t.frames.iter().map(|f| f.call_stack.len()).max().unwrap();
         assert!(max_depth >= 4, "expected deep recursion, got {max_depth}");

@@ -47,8 +47,7 @@ fn run(command: &str, path: &str) -> Result<ExitCode, Box<dyn std::error::Error>
         }
         "run" => {
             let trace = vm::record(program);
-            let last = &trace.frames[trace.last()];
-            print!("{}", last.output);
+            print!("{}", trace.output_at(trace.last()));
             if let Some(err) = trace.faulted() {
                 eprintln!("fault at step {}: {err}", trace.last());
                 return Ok(ExitCode::FAILURE);
