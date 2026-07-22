@@ -1009,8 +1009,31 @@ function copyOutput() {
   };
   const text = session ? session.frame(cursor).output : '';
   if (!text) { done('∅ empty'); return; }
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done('✓ copied'), () => done('✗ failed'));
-  else done('✗ no clipboard');
+  // The async clipboard needs a secure context + focus; fall back to the legacy
+  // selection copy so the button never dead-ends (file://, older Safari, denied).
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => done('✓ copied'), () => done(legacyCopy(text)));
+  } else {
+    done(legacyCopy(text));
+  }
+}
+
+// execCommand('copy') via an off-screen textarea. Returns the label to show.
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  let ok = false;
+  try {
+    ta.select();
+    ok = document.execCommand('copy');
+  } catch (e) {
+    ok = false;
+  }
+  ta.remove();
+  return ok ? '✓ copied' : '✗ failed';
 }
 
 function toggleHelp(force) {

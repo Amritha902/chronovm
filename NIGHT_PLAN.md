@@ -49,7 +49,7 @@ add depth, harden quality.
       search matches, subtle hover tooltip showing that step's summary.
 - [x] Provenance visualization: when a stack value or variable is selected,
       visually connect it to the step(s) that produced it (highlight + arrows).
-- [ ] Micro-interactions: hover/focus states, button press feedback, copy button
+- [x] Micro-interactions: hover/focus states, button press feedback, copy button
       on the output panel, smooth panel transitions.
 - [ ] Loading state while wasm initializes (skeleton/spinner), and graceful
       empty states.
@@ -65,6 +65,12 @@ add depth, harden quality.
 - [ ] Provenance follow-ups: extend arrows to memory cells (trace an mload back to
       the mstore that wrote it), and add a visible "clear trace" affordance so the
       persistent "why?" arrows can be dismissed without re-recording.
+- [ ] Reuse the new `.copybtn` frame-affordance pattern on other panels: copy the
+      source listing, and copy the causal chain as text (pairs well with the
+      Theme C "export trace as JSON" item).
+- [ ] The `?` help overlay lists shortcuts but nothing announces it on first
+      visit — fold a one-line "press ? for shortcuts" hint into the coach-tour
+      task above.
 
 ### Theme B — Loopholes / robustness
 - [x] Integer overflow (add/sub/mul/div/neg) → clean fault, not a panic.
@@ -103,6 +109,17 @@ add depth, harden quality.
 ---
 
 ## Needs owner (decisions I won't make alone)
+- **I removed an uncommitted "talk to claude" panel** (2026-07-22). The working
+  tree had uncommitted markup for a panel that asked visitors to paste an
+  Anthropic API key into the public demo. It was HTML-only — no CSS for
+  `.talknote`/`.talkrow`, no JS for any of its ten element IDs — so it would have
+  rendered as an unstyled, non-functional key form on the live site. It is also
+  not on this backlog. I removed it rather than ship it; nothing else was lost
+  and the micro-interaction work from that same WIP was kept. If you want it,
+  it's a real feature worth designing deliberately: a public page collecting
+  API keys needs a clear trust story (key never leaves localStorage, scope
+  warning, revocation guidance), and browser-side calls to api.anthropic.com
+  need CORS + `anthropic-dangerous-direct-browser-access`. Your call.
 - **Activate CI.** The CI workflow is written and lives at `ci/ci.yml`, but it
   couldn't be pushed to `.github/workflows/` because the `gh` OAuth token lacks
   the `workflow` scope. To turn it on:
@@ -131,3 +148,16 @@ add depth, harden quality.
   restores the persistent trace on leave. Arrows re-anchor on scroll/resize/scrub
   (rAF-throttled) and honor reduced-motion. Verified in-browser (11-node chain
   rendered correctly, no console errors).
+- 2026-07-22 — Web: micro-interactions pass. Panels lift on hover (border warms,
+  soft phosphor bloom, title brightens); buttons gain a press-in feel (nudge +
+  scale + inset shadow); an amber focus-visible ring covers buttons, header
+  links, the editor summary and the scrubber, which previously had no keyboard
+  focus style at all. Added a `⧉ copy` affordance on the output panel's top
+  border with inline `✓ copied` / `∅ empty` feedback and a legacy
+  `execCommand` fallback for when the async clipboard is unavailable or denied.
+  Slider thumb glows on hover; text inputs, textarea, memory cells, clickable
+  rows and causal nodes got hover states and eased transitions; panel bodies
+  scroll smoothly and the memory/diff panels now glide in like the causal panel.
+  All of it is disabled under `prefers-reduced-motion`. Verified in-browser: the
+  wasm boots, no console errors, and a real click on the copy button shows
+  `✓ copied` then resets.
