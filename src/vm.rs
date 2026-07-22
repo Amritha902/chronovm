@@ -132,7 +132,11 @@ impl Trace {
     /// Returns an ordered chain, most-recent cause first. This is the engine
     /// behind the debugger's "why is this value what it is?" jump.
     pub fn explain_var(&self, frame_idx: usize, var: &str) -> Vec<CausalNode> {
-        let frame = &self.frames[frame_idx];
+        // Bounds-check: the browser can pass any frame index, and an out-of-range
+        // index would otherwise panic (a wasm trap) rather than return cleanly.
+        let Some(frame) = self.frames.get(frame_idx) else {
+            return Vec::new();
+        };
         let Some(&def_step) = frame.var_def().get(var) else {
             return vec![CausalNode {
                 step: frame_idx,
@@ -552,7 +556,9 @@ impl<'p> Machine<'p> {
     /// Validate a memory address and grow the backing store to cover it,
     /// returning the usable index. Faults on a negative or out-of-range address.
     fn mem_index(&mut self, addr: i64) -> Result<usize, String> {
-        if addr < 0 || addr as usize >= MAX_MEM {
+        // Compare in i64 space: on wasm32 `addr as usize` truncates to 32 bits,
+        // so a huge address would wrap and slip past a usize-based bound check.
+        if addr < 0 || addr >= MAX_MEM as i64 {
             return Err(format!("memory address {addr} out of range (0..{MAX_MEM})"));
         }
         let i = addr as usize;
@@ -681,6 +687,20 @@ mod tests {
             reached_mstore,
             "causal chain should thread through memory: {chain:?}"
         );
+    }
+
+    #[test]
+    fn huge_memory_address_cannot_wrap_past_the_bound() {
+        // 2^32 truncates to 0 in 32-bit usize; the check must compare in i64
+        // space so this faults instead of silently writing to mem[0].
+        let t = trace_of("push 7\npush 4294967296\nmstore\nhalt\n");
+        assert!(t.faulted().unwrap().contains("out of range"));
+    }
+
+    #[test]
+    fn explain_var_out_of_range_frame_is_empty_not_a_panic() {
+        let t = trace_of("push 1\nstore x\nhalt\n");
+        assert!(t.explain_var(usize::MAX, "x").is_empty());
     }
 
     #[test]
